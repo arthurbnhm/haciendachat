@@ -234,3 +234,12 @@ async def main(message: cl.Message):
 
     # Mettre à jour le message final
     await msg.update()
+
+    import os
+
+# Ajouter cette ligne pour récupérer le port de l'environnement
+port = int(os.getenv("PORT", 8000))
+
+# Lancer Chainlit en utilisant ce port
+if __name__ == "__main__":
+    cl.run(port=port)
