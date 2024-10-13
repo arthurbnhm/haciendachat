@@ -1,0 +1,4 @@
+chainlit
+openai
+supabase
+python-dotenv
