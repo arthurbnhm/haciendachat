@@ -1,1 +1,1 @@
-web: chainlit run main.py --no-open
+web: chainlit run main.py
