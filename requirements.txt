@@ -2,4 +2,3 @@ chainlit
 openai==0.28.0
 supabase
 python-dotenv
-bcrypt
