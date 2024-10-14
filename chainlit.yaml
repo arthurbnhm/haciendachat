@@ -1,0 +1,4 @@
+project:
+  database:
+    name: sqlite
+    path: chainlit.db
