@@ -31,9 +31,9 @@ current_year = current_date.year
 
 # Fonction d'authentification avec Supabase
 @cl.password_auth_callback
-def auth_callback(username: str, password: str):
-    # Requête à la base Supabase pour récupérer l'utilisateur par son nom d'utilisateur
-    user_response = supabase.from_("users").select("*").eq("username", username).single().execute()
+def auth_callback(email: str, password: str):
+    # Requête à la base Supabase pour récupérer l'utilisateur par son email
+    user_response = supabase.from_("Credentials").select("*").eq("email", email).single().execute()
     
     # Vérifier si l'utilisateur existe
     if user_response.data:
@@ -41,8 +41,8 @@ def auth_callback(username: str, password: str):
         hashed_password = user_response.data["password"]
         if bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8')):
             return cl.User(
-                identifier=user_response.data["id"],
-                metadata={"role": user_response.data["role"], "provider": "credentials"}
+                identifier=user_response.data["email"],
+                metadata={"provider": "credentials"}
             )
     
     return None  # Échec de l'authentification si l'utilisateur ou le mot de passe est incorrect
