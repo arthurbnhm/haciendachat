@@ -1,0 +1,5 @@
+project:
+  threads:
+    enabled: true
+  auth:
+    enabled: true
