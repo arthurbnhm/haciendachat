@@ -17,6 +17,9 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 JWT_SECRET = os.getenv("JWT_SECRET")
 
+# **Ajout de cette ligne pour s'assurer que JWT_SECRET est présent dans os.environ**
+os.environ["JWT_SECRET"] = JWT_SECRET
+
 # Vérifier que le JWT secret est défini
 if not JWT_SECRET:
     raise ValueError("Le secret JWT n'est pas défini. Vérifiez la variable d'environnement JWT_SECRET.")
@@ -223,4 +226,3 @@ port = int(os.getenv("PORT", 8000))
 
 if __name__ == "__main__":
     cl.run(port=port)
-   
