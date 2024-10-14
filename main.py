@@ -6,7 +6,6 @@ import openai
 import json
 import datetime
 import logging
-
 from typing import Dict, Optional
 
 # Charger les variables d'environnement
@@ -17,23 +16,21 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 CHAINLIT_AUTH_SECRET = os.getenv("CHAINLIT_AUTH_SECRET")
+OAUTH_GOOGLE_CLIENT_ID = os.getenv("OAUTH_GOOGLE_CLIENT_ID")
+OAUTH_GOOGLE_CLIENT_SECRET = os.getenv("OAUTH_GOOGLE_CLIENT_SECRET")
+CHAINLIT_URL = os.getenv("CHAINLIT_URL")
+PORT = int(os.getenv("PORT", 8000))
 
 # Vérifier que toutes les variables d'environnement requises sont définies
 missing_env_vars = []
-if not SUPABASE_URL:
-    missing_env_vars.append("SUPABASE_URL")
-if not SUPABASE_KEY:
-    missing_env_vars.append("SUPABASE_KEY")
-if not OPENAI_API_KEY:
-    missing_env_vars.append("OPENAI_API_KEY")
-if not CHAINLIT_AUTH_SECRET:
-    missing_env_vars.append("CHAINLIT_AUTH_SECRET")
-if not os.getenv("OAUTH_GOOGLE_CLIENT_ID"):
-    missing_env_vars.append("OAUTH_GOOGLE_CLIENT_ID")
-if not os.getenv("OAUTH_GOOGLE_CLIENT_SECRET"):
-    missing_env_vars.append("OAUTH_GOOGLE_CLIENT_SECRET")
-if not os.getenv("CHAINLIT_URL"):
-    missing_env_vars.append("CHAINLIT_URL")
+required_vars = [
+    "SUPABASE_URL", "SUPABASE_KEY", "OPENAI_API_KEY",
+    "CHAINLIT_AUTH_SECRET", "OAUTH_GOOGLE_CLIENT_ID",
+    "OAUTH_GOOGLE_CLIENT_SECRET", "CHAINLIT_URL", "PORT"
+]
+for var in required_vars:
+    if not os.getenv(var):
+        missing_env_vars.append(var)
 
 if missing_env_vars:
     raise ValueError(f"Les variables d'environnement suivantes sont manquantes : {', '.join(missing_env_vars)}")
@@ -231,12 +228,26 @@ def oauth_callback(
     default_user: cl.User,
 ) -> Optional[cl.User]:
     if provider_id == "google":
-        # Vous pouvez ajouter des vérifications supplémentaires ici si nécessaire
+        # Récupérer les informations de l'utilisateur
+        email = raw_user_data.get("email")
+        name = raw_user_data.get("name")
+
+        # Vérifier si l'utilisateur existe déjà dans Supabase
+        response = supabase.table("users").select("*").eq("email", email).execute()
+        user_data = response.data
+
+        if not user_data:
+            # Créer un nouvel utilisateur
+            supabase.table("users").insert({"email": email, "name": name}).execute()
+            logging.info(f"Nouvel utilisateur créé : {email}")
+        else:
+            logging.info(f"Utilisateur existant : {email}")
+
         return default_user
     return None
 
 # Récupérer le port de l'environnement
-port = int(os.getenv("PORT", 8000))
+port = PORT
 
 # Lancer Chainlit en utilisant ce port et le secret d'authentification
 if __name__ == "__main__":
