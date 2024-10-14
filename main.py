@@ -6,7 +6,7 @@ import openai
 import json
 import datetime
 import logging
-import bcrypt  # Import pour le hachage des mots de passe
+import bcrypt
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -15,7 +15,7 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-CHAINLIT_AUTH_SECRET = os.getenv("CHAINLIT_AUTH_SECRET")  # Utiliser le bon nom de variable
+CHAINLIT_AUTH_SECRET = os.getenv("CHAINLIT_AUTH_SECRET")
 
 # Vérifier que toutes les variables d'environnement requises sont définies
 missing_env_vars = []
@@ -218,6 +218,7 @@ async def main(message: cl.Message):
 # Fonction d'authentification utilisant la table "Credentials" de Supabase
 @cl.password_auth_callback
 def auth_callback(username: str, password: str):
+    logging.info(f"Tentative de connexion pour l'utilisateur : {username}")
     response = supabase.table("Credentials").select("*").eq("email", username).execute()
     user_data = response.data
 
@@ -225,14 +226,29 @@ def auth_callback(username: str, password: str):
         user = user_data[0]
         stored_hashed_password = user['password']
 
+        # Vérifier que le mot de passe haché n'est pas vide ou None
+        if not stored_hashed_password:
+            logging.error("Le mot de passe haché est vide ou None.")
+            return None
+
         # Vérifier le mot de passe en utilisant bcrypt
-        if bcrypt.checkpw(password.encode('utf-8'), stored_hashed_password.encode('utf-8')):
-            # Authentification réussie, retourner un objet cl.User
-            return cl.User(
-                identifier=username,
-                metadata={"provider": "credentials"}
-            )
+        try:
+            if bcrypt.checkpw(password.encode('utf-8'), stored_hashed_password.encode('utf-8')):
+                logging.info(f"Authentification réussie pour l'utilisateur : {username}")
+                return cl.User(
+                    identifier=username,
+                    metadata={"provider": "credentials"}
+                )
+            else:
+                logging.warning(f"Mot de passe incorrect pour l'utilisateur : {username}")
+        except ValueError as e:
+            logging.error(f"Erreur lors de la vérification du mot de passe : {e}")
+            return None
+    else:
+        logging.warning(f"Utilisateur non trouvé : {username}")
+
     # Authentification échouée
+    logging.error("Authentification échouée")
     return None
 
 # Récupérer le port de l'environnement
@@ -243,5 +259,5 @@ if __name__ == "__main__":
     cl.run(
         port=port,
         host="0.0.0.0",
-        auth_secret=CHAINLIT_AUTH_SECRET  # Utiliser 'auth_secret' avec le bon secret
+        auth_secret=CHAINLIT_AUTH_SECRET
     )
