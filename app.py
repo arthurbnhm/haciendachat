@@ -15,7 +15,7 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-CHAINLIT_AUTH_SECRET = os.getenv("CHAINLIT_AUTH_SECRET")
+# CHAINLIT_AUTH_SECRET n'est plus utilisé globalement
 OAUTH_GOOGLE_CLIENT_ID = os.getenv("OAUTH_GOOGLE_CLIENT_ID")
 OAUTH_GOOGLE_CLIENT_SECRET = os.getenv("OAUTH_GOOGLE_CLIENT_SECRET")
 CHAINLIT_URL = os.getenv("CHAINLIT_URL")
@@ -25,7 +25,7 @@ PORT = int(os.getenv("PORT", 8000))
 missing_env_vars = []
 required_vars = [
     "SUPABASE_URL", "SUPABASE_KEY", "OPENAI_API_KEY",
-    "CHAINLIT_AUTH_SECRET", "OAUTH_GOOGLE_CLIENT_ID",
+    "OAUTH_GOOGLE_CLIENT_ID",
     "OAUTH_GOOGLE_CLIENT_SECRET", "CHAINLIT_URL", "PORT"
 ]
 for var in required_vars:
@@ -37,9 +37,6 @@ if missing_env_vars:
 
 # Configurer le logger avec le niveau DEBUG
 logging.basicConfig(level=logging.DEBUG)
-
-# Vérifier que le secret JWT est bien récupéré
-logging.info(f"Secret JWT récupéré : {'Présent' if CHAINLIT_AUTH_SECRET else 'Absent'}")
 
 # Initialiser les clients Supabase et OpenAI
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -197,11 +194,16 @@ MAX_HISTORY_LENGTH = 10
 @cl.on_message
 async def main(message: cl.Message):
     user = cl.user_session.get("user")
+    
+    # Si l'utilisateur n'est pas authentifié
     if not user:
-        # Si l'utilisateur n'est pas authentifié, afficher un message demandant de se connecter
-        await cl.Message(content="Veuillez vous connecter pour utiliser ce service.", actions=[
-            cl.Button(label="Se connecter avec Google", on_click="login_with_google")
-        ]).send()
+        # Envoyer un message de bienvenue avec un bouton de connexion
+        await cl.Message(
+            content="Bienvenue sur l'application ! Veuillez vous connecter pour continuer.",
+            actions=[
+                cl.Button(label="Se connecter avec Google", on_click="login_with_google")
+            ]
+        ).send()
         return
 
     user_message = message.content
@@ -256,22 +258,10 @@ def oauth_callback(
         return default_user
     return None
 
-# Ajout d'un bouton de connexion à la page d'accueil
-@cl.on_start
-def on_start():
-    # Afficher un message de bienvenue avec un bouton de connexion
-    cl.Message(
-        content="Bienvenue sur l'application !",
-        actions=[
-            cl.Button(label="Se connecter avec Google", on_click="login_with_google")
-        ]
-    ).send()
-
 # Action pour gérer le clic sur le bouton de connexion
 @cl.action("login_with_google")
 def login_with_google_action():
     # Rediriger l'utilisateur vers le flux d'authentification OAuth de Google
-    # Remplacez 'YOUR_REDIRECT_URI' par l'URL de votre callback OAuth
     google_oauth_url = (
         f"https://accounts.google.com/o/oauth2/v2/auth?"
         f"client_id={OAUTH_GOOGLE_CLIENT_ID}&"
@@ -290,4 +280,5 @@ if __name__ == "__main__":
     cl.run(
         port=port,
         host="0.0.0.0"
+        # auth_secret=CHAINLIT_AUTH_SECRET  # Supprimé pour désactiver l'authentification globale
     )
