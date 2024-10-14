@@ -51,12 +51,13 @@ current_year = current_date.year
 # Définir la taille maximale de l'historique
 MAX_HISTORY_LENGTH = 10
 
-# Fonctions existantes (get_ia_data_for_date, generate_summary, etc.)
+# Fonction pour récupérer les données dans la table "IA" pour une date donnée
 def get_ia_data_for_date(date_str):
     response = supabase.table("IA").select("*").eq("Date", date_str).execute()
     logging.debug("Données récupérées : %s", response.data)
     return response.data
 
+# Fonction pour générer un résumé détaillé des données
 def generate_summary(data):
     if not data:
         return "Aucune information trouvée pour la période spécifiée."
@@ -81,6 +82,7 @@ def generate_summary(data):
 
         return summary
 
+# Fonction de gestion de l'appel de fonction pour OpenAI
 def call_function_with_parameters(function_name, function_args_json):
     function_args = json.loads(function_args_json)
     if function_name == "get_ia_data_for_date":
@@ -94,6 +96,7 @@ def call_function_with_parameters(function_name, function_args_json):
             return "Date non spécifiée."
     return "Aucune fonction correspondante trouvée."
 
+# Fonction pour envoyer la requête à OpenAI avec streaming
 async def get_openai_response(conversation_history, msg):
     system_message = f"""
     Vous êtes un assistant utile qui aide à récupérer des données d'IA pour une date spécifiée.
@@ -235,7 +238,7 @@ async def on_chat_start():
 
 # Fonction pour gérer la reprise d'un chat existant
 @cl.on_chat_resume
-async def on_chat_resume(thread: cl.Thread):
+async def on_chat_resume(thread):
     # Restaurer la session utilisateur si nécessaire
     app_user = cl.user_session.get("user")
     logging.info(f"Reprise du chat pour l'utilisateur : {app_user.identifier if app_user else 'Utilisateur inconnu'}")
