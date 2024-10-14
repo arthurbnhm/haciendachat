@@ -7,7 +7,6 @@ import json
 import datetime
 import logging
 import bcrypt
-from chainlit.message import Message
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -20,14 +19,15 @@ CHAINLIT_AUTH_SECRET = os.getenv("CHAINLIT_AUTH_SECRET")
 
 # Vérifier que toutes les variables d'environnement requises sont définies
 missing_env_vars = []
-if not SUPABASE_URL:
-    missing_env_vars.append("SUPABASE_URL")
-if not SUPABASE_KEY:
-    missing_env_vars.append("SUPABASE_KEY")
-if not OPENAI_API_KEY:
-    missing_env_vars.append("OPENAI_API_KEY")
-if not CHAINLIT_AUTH_SECRET:
-    missing_env_vars.append("CHAINLIT_AUTH_SECRET")
+required_env_vars = [
+    ("SUPABASE_URL", SUPABASE_URL),
+    ("SUPABASE_KEY", SUPABASE_KEY),
+    ("OPENAI_API_KEY", OPENAI_API_KEY),
+    ("CHAINLIT_AUTH_SECRET", CHAINLIT_AUTH_SECRET),
+]
+for var_name, var_value in required_env_vars:
+    if not var_value:
+        missing_env_vars.append(var_name)
 
 if missing_env_vars:
     raise ValueError(f"Les variables d'environnement suivantes sont manquantes : {', '.join(missing_env_vars)}")
@@ -48,13 +48,15 @@ current_day = current_date.day
 current_month = current_date.month
 current_year = current_date.year
 
-# Fonction pour récupérer les données dans la table "IA" pour une date donnée
+# Définir la taille maximale de l'historique
+MAX_HISTORY_LENGTH = 10
+
+# Fonctions existantes (get_ia_data_for_date, generate_summary, etc.)
 def get_ia_data_for_date(date_str):
     response = supabase.table("IA").select("*").eq("Date", date_str).execute()
     logging.debug("Données récupérées : %s", response.data)
     return response.data
 
-# Fonction pour générer un résumé détaillé des données
 def generate_summary(data):
     if not data:
         return "Aucune information trouvée pour la période spécifiée."
@@ -79,7 +81,6 @@ def generate_summary(data):
 
         return summary
 
-# Fonction de gestion de l'appel de fonction pour OpenAI
 def call_function_with_parameters(function_name, function_args_json):
     function_args = json.loads(function_args_json)
     if function_name == "get_ia_data_for_date":
@@ -93,7 +94,6 @@ def call_function_with_parameters(function_name, function_args_json):
             return "Date non spécifiée."
     return "Aucune fonction correspondante trouvée."
 
-# Fonction pour envoyer la requête à OpenAI avec streaming
 async def get_openai_response(conversation_history, msg):
     system_message = f"""
     Vous êtes un assistant utile qui aide à récupérer des données d'IA pour une date spécifiée.
@@ -187,41 +187,6 @@ async def get_openai_response(conversation_history, msg):
         logging.info("Réponse finale envoyée à l'utilisateur : %s", assistant_response)
         return assistant_response
 
-# Définir la taille maximale de l'historique
-MAX_HISTORY_LENGTH = 10
-
-# Gestion des messages dans Chainlit
-@cl.on_message
-async def main(message: cl.Message):
-    user_message = message.content
-
-    # Récupérer l'historique des messages stockés
-    conversation_history = []
-
-    # Obtenir les messages passés
-    messages = await Message.get_history()
-
-    for msg in messages:
-        if msg.is_from_user:
-            role = "user"
-        else:
-            role = "assistant"
-        conversation_history.append({"role": role, "content": msg.content})
-
-    # Ajouter le nouveau message de l'utilisateur
-    conversation_history.append({"role": "user", "content": user_message})
-
-    # Limiter la taille de l'historique
-    if len(conversation_history) > MAX_HISTORY_LENGTH:
-        conversation_history = conversation_history[-MAX_HISTORY_LENGTH:]
-
-    msg = Message(content="")
-    await msg.send()
-
-    response_text = await get_openai_response(conversation_history, msg)
-
-    await msg.update()
-
 # Fonction d'authentification utilisant la table "credentials" de Supabase
 @cl.password_auth_callback
 def auth_callback(username: str, password: str):
@@ -259,10 +224,64 @@ def auth_callback(username: str, password: str):
     logging.error("Authentification échouée")
     return None
 
+# Fonction pour gérer le démarrage d'un nouveau chat
+@cl.on_chat_start
+async def on_chat_start():
+    app_user = cl.user_session.get("user")
+    if app_user:
+        await cl.Message(content=f"Bonjour {app_user.identifier}, comment puis-je vous aider aujourd'hui ?").send()
+    else:
+        await cl.Message(content="Bonjour, comment puis-je vous aider aujourd'hui ?").send()
+
+# Fonction pour gérer la reprise d'un chat existant
+@cl.on_chat_resume
+async def on_chat_resume(thread: cl.Thread):
+    # Restaurer la session utilisateur si nécessaire
+    app_user = cl.user_session.get("user")
+    logging.info(f"Reprise du chat pour l'utilisateur : {app_user.identifier if app_user else 'Utilisateur inconnu'}")
+
+    # Envoyer les messages persistés à l'interface utilisateur
+    await thread.send()
+
+# Gestion des messages dans Chainlit
+@cl.on_message
+async def main(message: cl.Message):
+    user_message = message.content
+
+    # Récupérer l'historique des messages stockés dans le thread
+    conversation_history = []
+
+    # Obtenir les messages passés depuis le thread
+    messages = await cl.Message.get_history()
+
+    for msg in messages:
+        if msg.is_from_user:
+            role = "user"
+        else:
+            role = "assistant"
+        conversation_history.append({"role": role, "content": msg.content})
+
+    # Ajouter le nouveau message de l'utilisateur
+    conversation_history.append({"role": "user", "content": user_message})
+
+    # Limiter la taille de l'historique
+    if len(conversation_history) > MAX_HISTORY_LENGTH:
+        conversation_history = conversation_history[-MAX_HISTORY_LENGTH:]
+
+    # Créer un nouveau message vide pour la réponse
+    msg = cl.Message(content="")
+    await msg.send()
+
+    # Obtenir la réponse de OpenAI
+    response_text = await get_openai_response(conversation_history, msg)
+
+    # Mettre à jour le message avec la réponse
+    await msg.update()
+
 # Récupérer le port de l'environnement
 port = int(os.getenv("PORT", 8000))
 
-# Lancer Chainlit en utilisant ce port et le secret d'authentification
+# Lancer Chainlit en utilisant le port et le secret d'authentification
 if __name__ == "__main__":
     cl.run(
         port=port,
