@@ -34,6 +34,9 @@ if missing_env_vars:
 # Configurer le logger avec le niveau DEBUG
 logging.basicConfig(level=logging.DEBUG)
 
+# Vérifier que le secret JWT est bien récupéré
+logging.info(f"Secret JWT récupéré : {'Présent' if CHAINLIT_AUTH_SECRET else 'Absent'}")
+
 # Initialiser les clients Supabase et OpenAI
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 openai.api_key = OPENAI_API_KEY
@@ -248,28 +251,6 @@ def auth_callback(username: str, password: str):
     # Authentification échouée
     logging.error("Authentification échouée")
     return None
-
-# Ajouter des actions personnalisées
-@cl.action_callback("action_tools_shared")
-async def on_action_tools_shared(action):
-    await cl.Message(content=f"Action exécutée : {action.name} - Quels outils ont été partagés sur l'IA cette semaine ?").send()
-    await action.remove()
-
-@cl.action_callback("action_summary_yesterday")
-async def on_action_summary_yesterday(action):
-    await cl.Message(content=f"Action exécutée : {action.name} - Peux-tu me résumer les conversations d'hier dans le channel café ?").send()
-    await action.remove()
-
-# Gestion de démarrage du chat pour afficher les actions
-@cl.on_chat_start
-async def start():
-    # Envoi des actions disponibles dans un message
-    actions = [
-        cl.Action(name="action_tools_shared", value="tools", description="Quels outils ont été partagés sur l'IA cette semaine ?", label="Outils IA"),
-        cl.Action(name="action_summary_yesterday", value="summary", description="Peux-tu me résumer les conversations d'hier dans le channel café ?", label="Résumé Café")
-    ]
-
-    await cl.Message(content="Choisissez une action ci-dessous :", actions=actions).send()
 
 # Récupérer le port de l'environnement
 port = int(os.getenv("PORT", 8000))
