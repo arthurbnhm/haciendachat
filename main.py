@@ -15,6 +15,11 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+JWT_SECRET = os.getenv("JWT_SECRET")
+
+# Vérifier que le JWT secret est défini
+if not JWT_SECRET:
+    raise ValueError("Le secret JWT n'est pas défini. Vérifiez la variable d'environnement JWT_SECRET.")
 
 # Initialiser les clients Supabase et OpenAI
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -29,35 +34,11 @@ current_day = current_date.day
 current_month = current_date.month
 current_year = current_date.year
 
-# Fonction pour hacher le mot de passe
-def hash_password(password: str) -> str:
-    # Générer un sel et hacher le mot de passe
-    salt = bcrypt.gensalt()
-    hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
-    return hashed_password.decode('utf-8')
-
-# Fonction pour enregistrer un utilisateur (inscription)
-def register_user(email: str, password: str):
-    # Hacher le mot de passe avant de le stocker
-    hashed_password = hash_password(password)
-    
-    # Insérer l'utilisateur avec le mot de passe haché dans la table Credentials
-    response = supabase.from_("Credentials").insert({
-        "email": email,
-        "password": hashed_password
-    }).execute()
-    
-    # Vérifier si l'insertion a réussi
-    if response.status_code == 201:
-        logging.info(f"Utilisateur {email} enregistré avec succès.")
-    else:
-        logging.error(f"Erreur lors de l'enregistrement de l'utilisateur {email}: {response.data}")
-
 # Fonction d'authentification avec Supabase
 @cl.password_auth_callback
-def auth_callback(email: str, password: str):
-    # Requête à la base Supabase pour récupérer l'utilisateur par son email
-    user_response = supabase.from_("Credentials").select("*").eq("email", email).single().execute()
+def auth_callback(username: str, password: str):
+    # Requête à la base Supabase pour récupérer l'utilisateur par son nom d'utilisateur
+    user_response = supabase.from_("users").select("*").eq("username", username).single().execute()
     
     # Vérifier si l'utilisateur existe
     if user_response.data:
@@ -65,8 +46,8 @@ def auth_callback(email: str, password: str):
         hashed_password = user_response.data["password"]
         if bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8')):
             return cl.User(
-                identifier=user_response.data["email"],
-                metadata={"provider": "credentials"}
+                identifier=user_response.data["id"],
+                metadata={"role": user_response.data["role"], "provider": "credentials"}
             )
     
     return None  # Échec de l'authentification si l'utilisateur ou le mot de passe est incorrect
@@ -241,4 +222,4 @@ async def main(message: cl.Message):
 port = int(os.getenv("PORT", 8000))
 
 if __name__ == "__main__":
-    cl.run(port=port)
+   
