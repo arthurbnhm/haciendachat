@@ -29,6 +29,30 @@ current_day = current_date.day
 current_month = current_date.month
 current_year = current_date.year
 
+# Fonction pour hacher le mot de passe
+def hash_password(password: str) -> str:
+    # Générer un sel et hacher le mot de passe
+    salt = bcrypt.gensalt()
+    hashed_password = bcrypt.hashpw(password.encode('utf-8'), salt)
+    return hashed_password.decode('utf-8')
+
+# Fonction pour enregistrer un utilisateur (inscription)
+def register_user(email: str, password: str):
+    # Hacher le mot de passe avant de le stocker
+    hashed_password = hash_password(password)
+    
+    # Insérer l'utilisateur avec le mot de passe haché dans la table Credentials
+    response = supabase.from_("Credentials").insert({
+        "email": email,
+        "password": hashed_password
+    }).execute()
+    
+    # Vérifier si l'insertion a réussi
+    if response.status_code == 201:
+        logging.info(f"Utilisateur {email} enregistré avec succès.")
+    else:
+        logging.error(f"Erreur lors de l'enregistrement de l'utilisateur {email}: {response.data}")
+
 # Fonction d'authentification avec Supabase
 @cl.password_auth_callback
 def auth_callback(email: str, password: str):
