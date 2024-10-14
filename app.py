@@ -15,7 +15,7 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-# CHAINLIT_AUTH_SECRET n'est plus utilisé globalement
+CHAINLIT_AUTH_SECRET = os.getenv("CHAINLIT_AUTH_SECRET")
 OAUTH_GOOGLE_CLIENT_ID = os.getenv("OAUTH_GOOGLE_CLIENT_ID")
 OAUTH_GOOGLE_CLIENT_SECRET = os.getenv("OAUTH_GOOGLE_CLIENT_SECRET")
 CHAINLIT_URL = os.getenv("CHAINLIT_URL")
@@ -25,7 +25,7 @@ PORT = int(os.getenv("PORT", 8000))
 missing_env_vars = []
 required_vars = [
     "SUPABASE_URL", "SUPABASE_KEY", "OPENAI_API_KEY",
-    "OAUTH_GOOGLE_CLIENT_ID",
+    "CHAINLIT_AUTH_SECRET", "OAUTH_GOOGLE_CLIENT_ID",
     "OAUTH_GOOGLE_CLIENT_SECRET", "CHAINLIT_URL", "PORT"
 ]
 for var in required_vars:
@@ -37,6 +37,9 @@ if missing_env_vars:
 
 # Configurer le logger avec le niveau DEBUG
 logging.basicConfig(level=logging.DEBUG)
+
+# Vérifier que le secret JWT est bien récupéré
+logging.info(f"Secret JWT récupéré : {'Présent' if CHAINLIT_AUTH_SECRET else 'Absent'}")
 
 # Initialiser les clients Supabase et OpenAI
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -193,19 +196,6 @@ MAX_HISTORY_LENGTH = 10
 # Gestion des messages dans Chainlit
 @cl.on_message
 async def main(message: cl.Message):
-    user = cl.user_session.get("user")
-    
-    # Si l'utilisateur n'est pas authentifié
-    if not user:
-        # Envoyer un message de bienvenue avec un bouton de connexion
-        await cl.Message(
-            content="Bienvenue sur l'application ! Veuillez vous connecter pour continuer.",
-            actions=[
-                cl.Button(label="Se connecter avec Google", on_click="login_with_google")
-            ]
-        ).send()
-        return
-
     user_message = message.content
 
     if cl.user_session.get('conversation_history') is None:
@@ -253,32 +243,16 @@ def oauth_callback(
         else:
             logging.info(f"Utilisateur existant : {email}")
 
-        # Stocker les informations de l'utilisateur dans la session
-        cl.user_session.set("user", {"email": email, "name": name})
         return default_user
     return None
-
-# Action pour gérer le clic sur le bouton de connexion
-@cl.action("login_with_google")
-def login_with_google_action():
-    # Rediriger l'utilisateur vers le flux d'authentification OAuth de Google
-    google_oauth_url = (
-        f"https://accounts.google.com/o/oauth2/v2/auth?"
-        f"client_id={OAUTH_GOOGLE_CLIENT_ID}&"
-        f"redirect_uri={CHAINLIT_URL}/oauth/callback/google&"
-        f"response_type=code&"
-        f"scope=openid%20email%20profile&"
-        f"prompt=select_account"
-    )
-    cl.redirect(google_oauth_url)
 
 # Récupérer le port de l'environnement
 port = PORT
 
-# Lancer Chainlit en utilisant ce port sans le secret d'authentification globale
+# Lancer Chainlit en utilisant ce port et le secret d'authentification
 if __name__ == "__main__":
     cl.run(
         port=port,
-        host="0.0.0.0"
-        # auth_secret=CHAINLIT_AUTH_SECRET  # Supprimé pour désactiver l'authentification globale
+        host="0.0.0.0",
+        auth_secret=CHAINLIT_AUTH_SECRET
     )
