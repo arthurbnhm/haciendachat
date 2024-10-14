@@ -7,6 +7,7 @@ import json
 import datetime
 import logging
 from typing import Dict, Optional
+from fastapi import Request, Response
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -245,6 +246,21 @@ def oauth_callback(
 
         return default_user
     return None
+
+# Ajouter une route publique pour la page d'accueil
+@cl.app.get("/")
+async def homepage(request: Request):
+    return Response(content="""
+        <html>
+            <head>
+                <title>Accueil</title>
+            </head>
+            <body>
+                <h1>Bienvenue sur la page d'accueil</h1>
+                <a href="/auth/oauth/google/login">Se connecter avec Google</a>
+            </body>
+        </html>
+    """, media_type="text/html")
 
 # Récupérer le port de l'environnement
 port = PORT
