@@ -7,8 +7,6 @@ import json
 import datetime
 import logging
 from typing import Dict, Optional
-from fastapi import Request, Response
-from chainlit import api  # Importer l'API de Chainlit
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -247,42 +245,6 @@ def oauth_callback(
 
         return default_user
     return None
-
-# Ajouter une route publique pour la page d'accueil
-@api.app.get("/")
-async def homepage(request: Request):
-    return Response(content="""
-        <html>
-            <head>
-                <title>Accueil</title>
-                <style>
-                    body {
-                        font-family: Arial, sans-serif;
-                        text-align: center;
-                        margin-top: 50px;
-                    }
-                    .login-button {
-                        display: inline-block;
-                        padding: 10px 20px;
-                        font-size: 16px;
-                        color: #fff;
-                        background-color: #4285F4;
-                        border: none;
-                        border-radius: 4px;
-                        text-decoration: none;
-                    }
-                    .login-button:hover {
-                        background-color: #357ae8;
-                    }
-                </style>
-            </head>
-            <body>
-                <h1>Bienvenue sur HACIENDA CHAT</h1>
-                <p>Connectez-vous pour accéder à toutes les fonctionnalités.</p>
-                <a href="/auth/oauth/google/login" class="login-button">Se connecter avec Google</a>
-            </body>
-        </html>
-    """, media_type="text/html")
 
 # Récupérer le port de l'environnement
 port = PORT
