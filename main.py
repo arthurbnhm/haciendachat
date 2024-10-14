@@ -31,8 +31,8 @@ if not CHAINLIT_AUTH_SECRET:
 if missing_env_vars:
     raise ValueError(f"Les variables d'environnement suivantes sont manquantes : {', '.join(missing_env_vars)}")
 
-# Configurer le logger
-logging.basicConfig(level=logging.INFO)
+# Configurer le logger avec le niveau DEBUG
+logging.basicConfig(level=logging.DEBUG)
 
 # Vérifier que le secret JWT est bien récupéré
 logging.info(f"Secret JWT récupéré : {'Présent' if CHAINLIT_AUTH_SECRET else 'Absent'}")
@@ -215,11 +215,12 @@ async def main(message: cl.Message):
 
     await msg.update()
 
-# Fonction d'authentification utilisant la table "Credentials" de Supabase
+# Fonction d'authentification utilisant la table "credentials" de Supabase
 @cl.password_auth_callback
 def auth_callback(username: str, password: str):
     logging.info(f"Tentative de connexion pour l'utilisateur : {username}")
-    response = supabase.table("Credentials").select("*").eq("email", username).execute()
+    response = supabase.table("credentials").select("*").eq("email", username).execute()
+    logging.debug(f"Réponse de Supabase : {response.data}")
     user_data = response.data
 
     if user_data and len(user_data) > 0:
