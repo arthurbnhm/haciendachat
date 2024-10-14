@@ -6,7 +6,8 @@ import openai
 import json
 import datetime
 import logging
-import bcrypt
+
+from typing import Dict, Optional
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -27,6 +28,12 @@ if not OPENAI_API_KEY:
     missing_env_vars.append("OPENAI_API_KEY")
 if not CHAINLIT_AUTH_SECRET:
     missing_env_vars.append("CHAINLIT_AUTH_SECRET")
+if not os.getenv("OAUTH_GOOGLE_CLIENT_ID"):
+    missing_env_vars.append("OAUTH_GOOGLE_CLIENT_ID")
+if not os.getenv("OAUTH_GOOGLE_CLIENT_SECRET"):
+    missing_env_vars.append("OAUTH_GOOGLE_CLIENT_SECRET")
+if not os.getenv("CHAINLIT_URL"):
+    missing_env_vars.append("CHAINLIT_URL")
 
 if missing_env_vars:
     raise ValueError(f"Les variables d'environnement suivantes sont manquantes : {', '.join(missing_env_vars)}")
@@ -215,41 +222,17 @@ async def main(message: cl.Message):
 
     await msg.update()
 
-# Fonction d'authentification utilisant la table "credentials" de Supabase
-@cl.password_auth_callback
-def auth_callback(username: str, password: str):
-    logging.info(f"Tentative de connexion pour l'utilisateur : {username}")
-    response = supabase.table("credentials").select("*").eq("email", username).execute()
-    logging.debug(f"Réponse de Supabase : {response.data}")
-    user_data = response.data
-
-    if user_data and len(user_data) > 0:
-        user = user_data[0]
-        stored_hashed_password = user['password']
-
-        # Vérifier que le mot de passe haché n'est pas vide ou None
-        if not stored_hashed_password:
-            logging.error("Le mot de passe haché est vide ou None.")
-            return None
-
-        # Vérifier le mot de passe en utilisant bcrypt
-        try:
-            if bcrypt.checkpw(password.encode('utf-8'), stored_hashed_password.encode('utf-8')):
-                logging.info(f"Authentification réussie pour l'utilisateur : {username}")
-                return cl.User(
-                    identifier=username,
-                    metadata={"provider": "credentials"}
-                )
-            else:
-                logging.warning(f"Mot de passe incorrect pour l'utilisateur : {username}")
-        except ValueError as e:
-            logging.error(f"Erreur lors de la vérification du mot de passe : {e}")
-            return None
-    else:
-        logging.warning(f"Utilisateur non trouvé : {username}")
-
-    # Authentification échouée
-    logging.error("Authentification échouée")
+# Fonction de callback OAuth pour Google
+@cl.oauth_callback
+def oauth_callback(
+    provider_id: str,
+    token: str,
+    raw_user_data: Dict[str, str],
+    default_user: cl.User,
+) -> Optional[cl.User]:
+    if provider_id == "google":
+        # Vous pouvez ajouter des vérifications supplémentaires ici si nécessaire
+        return default_user
     return None
 
 # Récupérer le port de l'environnement
