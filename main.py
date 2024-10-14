@@ -15,7 +15,7 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-CHAINLIT_JWT_SECRET = os.getenv("CHAINLIT_JWT_SECRET")  # Ajout pour récupérer le secret JWT
+CHAINLIT_AUTH_SECRET = os.getenv("CHAINLIT_AUTH_SECRET")  # Utiliser le bon nom de variable
 
 # Vérifier que toutes les variables d'environnement requises sont définies
 missing_env_vars = []
@@ -25,18 +25,21 @@ if not SUPABASE_KEY:
     missing_env_vars.append("SUPABASE_KEY")
 if not OPENAI_API_KEY:
     missing_env_vars.append("OPENAI_API_KEY")
-if not CHAINLIT_JWT_SECRET:
-    missing_env_vars.append("CHAINLIT_JWT_SECRET")
+if not CHAINLIT_AUTH_SECRET:
+    missing_env_vars.append("CHAINLIT_AUTH_SECRET")
 
 if missing_env_vars:
     raise ValueError(f"Les variables d'environnement suivantes sont manquantes : {', '.join(missing_env_vars)}")
 
+# Configurer le logger
+logging.basicConfig(level=logging.INFO)
+
+# Vérifier que le secret JWT est bien récupéré
+logging.info(f"Secret JWT récupéré : {'Présent' if CHAINLIT_AUTH_SECRET else 'Absent'}")
+
 # Initialiser les clients Supabase et OpenAI
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 openai.api_key = OPENAI_API_KEY
-
-# Configurer le logger
-logging.basicConfig(level=logging.INFO)
 
 # Obtenir la date actuelle
 current_date = datetime.datetime.now()
@@ -63,7 +66,7 @@ def generate_summary(data):
         summary = ""
 
         completion = openai.ChatCompletion.create(
-            model="gpt-4o-mini-2024-07-18",
+            model="gpt-4",
             messages=messages,
             stream=True
         )
@@ -105,7 +108,7 @@ async def get_openai_response(conversation_history, msg):
     function_args = ""
 
     completion = await openai.ChatCompletion.acreate(
-        model="gpt-4o-mini-2024-07-18",
+        model="gpt-4",
         messages=messages,
         functions=[
             {
@@ -159,7 +162,7 @@ async def get_openai_response(conversation_history, msg):
         messages = [{"role": "system", "content": system_message}] + conversation_history
 
         completion = await openai.ChatCompletion.acreate(
-            model="gpt-4o-mini-2024-07-18",
+            model="gpt-4",
             messages=messages,
             stream=True
         )
@@ -232,14 +235,13 @@ def auth_callback(username: str, password: str):
     # Authentification échouée
     return None
 
-# Ajouter cette ligne pour récupérer le port de l'environnement
+# Récupérer le port de l'environnement
 port = int(os.getenv("PORT", 8000))
 
-# Lancer Chainlit en utilisant ce port
+# Lancer Chainlit en utilisant ce port et le secret d'authentification
 if __name__ == "__main__":
     cl.run(
         port=port,
         host="0.0.0.0",
-        # Vous pouvez passer le secret JWT ici si vous le souhaitez, mais si la variable d'environnement est définie, ce n'est pas nécessaire
-        # jwt_secret=CHAINLIT_JWT_SECRET
+        auth_secret=CHAINLIT_AUTH_SECRET  # Utiliser 'auth_secret' avec le bon secret
     )
