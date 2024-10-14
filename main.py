@@ -7,6 +7,7 @@ import json
 import datetime
 import logging
 import bcrypt
+from chainlit.message import Message
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -186,77 +187,40 @@ async def get_openai_response(conversation_history, msg):
         logging.info("Réponse finale envoyée à l'utilisateur : %s", assistant_response)
         return assistant_response
 
-# Fonction pour enregistrer un message dans l'historique de chat
-def save_chat_history(user, message_content):
-    data = {
-        "user_id": user,
-        "message": message_content,
-        "timestamp": datetime.datetime.now().isoformat()
-    }
-    response = supabase.table("chat_history").insert(data).execute()
-    return response
-
-# Fonction pour récupérer l'historique des chats d'un utilisateur
-def get_chat_history(user):
-    response = supabase.table("chat_history").select("*").eq("user_id", user).order("timestamp").execute()
-    return response.data if response else []
-
 # Définir la taille maximale de l'historique
 MAX_HISTORY_LENGTH = 10
-
-# Hook qui est appelé au début d'un chat
-@cl.on_chat_start
-async def on_chat_start():
-    user = cl.user_session.get("username")
-    chat_history = get_chat_history(user)
-    
-    if chat_history:
-        await cl.Message(content="Voici votre historique de chat précédent :").send()
-        for message in chat_history:
-            await cl.Message(content=message["message"]).send()
-    else:
-        await cl.Message(content="Nouvelle session de chat démarrée.").send()
 
 # Gestion des messages dans Chainlit
 @cl.on_message
 async def main(message: cl.Message):
     user_message = message.content
 
-    if cl.user_session.get('conversation_history') is None:
-        cl.user_session.set('conversation_history', [])
+    # Récupérer l'historique des messages stockés
+    conversation_history = []
 
-    conversation_history = cl.user_session.get('conversation_history')
+    # Obtenir les messages passés
+    messages = await Message.get_history()
 
+    for msg in messages:
+        if msg.is_from_user:
+            role = "user"
+        else:
+            role = "assistant"
+        conversation_history.append({"role": role, "content": msg.content})
+
+    # Ajouter le nouveau message de l'utilisateur
     conversation_history.append({"role": "user", "content": user_message})
 
+    # Limiter la taille de l'historique
     if len(conversation_history) > MAX_HISTORY_LENGTH:
         conversation_history = conversation_history[-MAX_HISTORY_LENGTH:]
 
-    cl.user_session.set('conversation_history', conversation_history)
-
-    # Enregistrer le message dans l'historique de chat
-    user = cl.user_session.get("username")
-    save_chat_history(user, user_message)
-
-    msg = cl.Message(content="")
+    msg = Message(content="")
     await msg.send()
 
     response_text = await get_openai_response(conversation_history, msg)
 
-    cl.user_session.set('conversation_history', conversation_history)
-
     await msg.update()
-
-# Hook pour reprendre un chat existant
-@cl.on_chat_resume
-async def on_chat_resume():
-    user = cl.user_session.get("username")
-    chat_history = get_chat_history(user)
-    
-    if chat_history:
-        await cl.Message(content="Reprise de votre historique de chat :").send()
-        for message in chat_history:
-            await cl.Message(content=message["message"]).send()
 
 # Fonction d'authentification utilisant la table "credentials" de Supabase
 @cl.password_auth_callback
