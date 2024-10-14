@@ -222,4 +222,5 @@ async def main(message: cl.Message):
 port = int(os.getenv("PORT", 8000))
 
 if __name__ == "__main__":
+    cl.run(port=port)
    
