@@ -28,7 +28,7 @@ missing_env_vars = []
 required_vars = [
     "SUPABASE_URL", "SUPABASE_KEY", "OPENAI_API_KEY",
     "OAUTH_GOOGLE_CLIENT_ID", "OAUTH_GOOGLE_CLIENT_SECRET",
-    "CHAINLIT_URL", "PORT"
+    "CHAINLIT_URL", "CHAINLIT_AUTH_SECRET", "PORT"
 ]
 for var in required_vars:
     if not os.getenv(var):
