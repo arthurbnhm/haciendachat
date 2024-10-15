@@ -18,7 +18,6 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-CHAINLIT_AUTH_SECRET = os.getenv("CHAINLIT_AUTH_SECRET")
 OAUTH_GOOGLE_CLIENT_ID = os.getenv("OAUTH_GOOGLE_CLIENT_ID")
 OAUTH_GOOGLE_CLIENT_SECRET = os.getenv("OAUTH_GOOGLE_CLIENT_SECRET")
 CHAINLIT_URL = os.getenv("CHAINLIT_URL")
@@ -28,7 +27,6 @@ PORT = int(os.getenv("PORT", 8000))
 missing_env_vars = []
 required_vars = [
     "SUPABASE_URL", "SUPABASE_KEY", "OPENAI_API_KEY",
-    "CHAINLIT_AUTH_SECRET", "OAUTH_GOOGLE_CLIENT_ID",
     "OAUTH_GOOGLE_CLIENT_SECRET", "CHAINLIT_URL", "PORT"
 ]
 for var in required_vars:
@@ -40,9 +38,6 @@ if missing_env_vars:
 
 # Configurer le logger avec le niveau DEBUG
 logging.basicConfig(level=logging.DEBUG)
-
-# Vérifier que le secret JWT est bien récupéré
-logging.info(f"Secret JWT récupéré : {'Présent' if CHAINLIT_AUTH_SECRET else 'Absent'}")
 
 # Initialiser les clients Supabase et OpenAI
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -257,5 +252,4 @@ if __name__ == "__main__":
     cl.run(
         port=port,
         host="0.0.0.0",
-        auth_secret=CHAINLIT_AUTH_SECRET
     )
