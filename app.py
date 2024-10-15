@@ -8,8 +8,7 @@ import datetime
 import logging
 from typing import Dict, Optional
 
-# Import the starters to register them
-import starters  # Add this line
+import starters
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -27,7 +26,8 @@ PORT = int(os.getenv("PORT", 8000))
 missing_env_vars = []
 required_vars = [
     "SUPABASE_URL", "SUPABASE_KEY", "OPENAI_API_KEY",
-    "OAUTH_GOOGLE_CLIENT_SECRET", "CHAINLIT_URL", "PORT"
+    "OAUTH_GOOGLE_CLIENT_ID", "OAUTH_GOOGLE_CLIENT_SECRET",
+    "CHAINLIT_URL", "PORT"
 ]
 for var in required_vars:
     if not os.getenv(var):
@@ -244,6 +244,7 @@ def oauth_callback(
         return default_user
     return None
 
+
 # Récupérer le port de l'environnement
 port = PORT
 
@@ -251,5 +252,5 @@ port = PORT
 if __name__ == "__main__":
     cl.run(
         port=port,
-        host="0.0.0.0",
+        host="0.0.0.0"
     )
