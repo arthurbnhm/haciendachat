@@ -8,6 +8,9 @@ import datetime
 import logging
 from typing import Dict, Optional
 
+# Import the starters to register them
+import starters  # Add this line
+
 # Charger les variables d'environnement
 load_dotenv()
 
@@ -15,6 +18,7 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+CHAINLIT_AUTH_SECRET = os.getenv("CHAINLIT_AUTH_SECRET")
 OAUTH_GOOGLE_CLIENT_ID = os.getenv("OAUTH_GOOGLE_CLIENT_ID")
 OAUTH_GOOGLE_CLIENT_SECRET = os.getenv("OAUTH_GOOGLE_CLIENT_SECRET")
 CHAINLIT_URL = os.getenv("CHAINLIT_URL")
@@ -24,8 +28,8 @@ PORT = int(os.getenv("PORT", 8000))
 missing_env_vars = []
 required_vars = [
     "SUPABASE_URL", "SUPABASE_KEY", "OPENAI_API_KEY",
-    "OAUTH_GOOGLE_CLIENT_ID", "OAUTH_GOOGLE_CLIENT_SECRET",
-    "CHAINLIT_URL", "PORT"
+    "CHAINLIT_AUTH_SECRET", "OAUTH_GOOGLE_CLIENT_ID",
+    "OAUTH_GOOGLE_CLIENT_SECRET", "CHAINLIT_URL", "PORT"
 ]
 for var in required_vars:
     if not os.getenv(var):
@@ -36,6 +40,9 @@ if missing_env_vars:
 
 # Configurer le logger avec le niveau DEBUG
 logging.basicConfig(level=logging.DEBUG)
+
+# Vérifier que le secret JWT est bien récupéré
+logging.info(f"Secret JWT récupéré : {'Présent' if CHAINLIT_AUTH_SECRET else 'Absent'}")
 
 # Initialiser les clients Supabase et OpenAI
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -242,27 +249,6 @@ def oauth_callback(
         return default_user
     return None
 
-# Définir les Starters
-@cl.set_starters
-async def set_starters():
-    return [
-        cl.Starter(
-            label="Résumer les conversations IA de la semaine",
-            message="Peux-tu me résumer les conversations autour de l'IA cette semaine ?",
-            icon="/public/write.svg",  
-        ),
-        cl.Starter(
-            label="Liens intéressants partagés",
-            message="Donne moi les liens intéressants qui ont été partagés",
-            icon="/public/learn.svg",
-        ),
-        cl.Starter(
-            label="Nouveaux produits sur Roast me I'm famous",
-            message="Quels produits ont été lancés récemment sur Roast me I'm famous ?",
-            icon="/public/idea.svg", 
-        ),
-    ]
-
 # Récupérer le port de l'environnement
 port = PORT
 
@@ -270,5 +256,6 @@ port = PORT
 if __name__ == "__main__":
     cl.run(
         port=port,
-        host="0.0.0.0"
+        host="0.0.0.0",
+        auth_secret=CHAINLIT_AUTH_SECRET
     )
