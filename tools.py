@@ -1,8 +1,11 @@
+# tools.py
+
 import json
 import logging
 from supabase import Client
 import plotly.graph_objects as go
 from typing import Dict, Any
+import random
 
 # Liste des définitions de fonctions pour OpenAI
 FUNCTION_DEFINITIONS = [
@@ -36,7 +39,7 @@ FUNCTION_DEFINITIONS = [
                     "properties": {
                         "x": {
                             "type": "array",
-                            "items": {"type": "number"},
+                            "items": {"type": "string"},
                             "description": "Les valeurs de l'axe X"
                         },
                         "y": {
@@ -111,11 +114,35 @@ def generate_plotly_chart(chart_type: str, data: Dict[str, Any]):
         logging.error("Erreur lors de la génération du graphique Plotly : %s", e)
         return json.dumps({"error": "Erreur lors de la génération du graphique."})
 
+def generate_random_data():
+    """
+    Génère des données aléatoires pour le graphique.
+    """
+    categories = ['A', 'B', 'C', 'D', 'E']
+    values = [random.randint(1, 100) for _ in categories]
+    return {'x': categories, 'y': values, 'title': 'Données Aléatoires'}
+
 def call_function_with_parameters(supabase: Client, function_name: str, function_args_json: str):
     """
     Gère l'appel de fonction en fonction du nom de la fonction et des arguments fournis.
     """
-    function_args = json.loads(function_args_json)
+    if not function_args_json:
+        # Si les arguments sont vides, fournir des valeurs par défaut
+        if function_name == "generate_plotly_chart":
+            chart_type = "bar"
+            data = generate_random_data()
+            logging.info(f"Utilisation de paramètres par défaut pour {function_name}")
+            function_response = generate_plotly_chart(chart_type, data)
+            return function_response
+        else:
+            return json.dumps({"error": "Paramètres manquants et aucun paramètre par défaut disponible."})
+    
+    try:
+        function_args = json.loads(function_args_json)
+    except json.JSONDecodeError as e:
+        logging.error("Erreur lors du parsing des arguments JSON : %s", e)
+        return json.dumps({"error": "Erreur de format des arguments JSON."})
+    
     if function_name == "get_ia_data_for_date":
         date_str = function_args.get("date")
         if date_str:
@@ -136,5 +163,11 @@ def call_function_with_parameters(supabase: Client, function_name: str, function
             function_response = generate_plotly_chart(chart_type, data)
             return function_response
         else:
-            return json.dumps({"error": "Paramètres 'chart_type' et 'data' sont requis."})
+            # Fournir des paramètres par défaut si certains sont manquants
+            if not chart_type:
+                chart_type = "bar"
+            if not data:
+                data = generate_random_data()
+            function_response = generate_plotly_chart(chart_type, data)
+            return function_response
     return json.dumps({"error": "Aucune fonction correspondante trouvée."})
