@@ -98,47 +98,6 @@ async def query_ia_data_handler(date: str):
 
 tools = [(query_ia_data_def, query_ia_data_handler)]
 
-# Configuration OpenAI Realtime avec outils
-from realtime import RealtimeClient
-
-async def setup_openai_realtime():
-    """Instantiate and configure the OpenAI Realtime Client"""
-    openai_realtime = RealtimeClient(api_key=os.getenv("OPENAI_API_KEY"))
-    cl.user_session.set("track_id", str(uuid4()))
-    
-    async def handle_conversation_updated(event):
-        item = event.get("item")
-        delta = event.get("delta")
-        if delta:
-            if 'audio' in delta:
-                audio = delta['audio']
-                await cl.context.emitter.send_audio_chunk(cl.OutputAudioChunk(mimeType="pcm16", data=audio, track=cl.user_session.get("track_id")))
-            if 'transcript' in delta:
-                transcript = delta['transcript']
-                pass
-            if 'arguments' in delta:
-                arguments = delta['arguments']
-                pass
-    
-    async def handle_item_completed(item):
-        pass
-    
-    async def handle_conversation_interrupt(event):
-        cl.user_session.set("track_id", str(uuid4()))
-        await cl.context.emitter.send_audio_interrupt()
-    
-    async def handle_error(event):
-        logger.error(event)
-    
-    openai_realtime.on('conversation.updated', handle_conversation_updated)
-    openai_realtime.on('conversation.item.completed', handle_item_completed)
-    openai_realtime.on('conversation.interrupted', handle_conversation_interrupt)
-    openai_realtime.on('error', handle_error)
-    
-    cl.user_session.set("openai_realtime", openai_realtime)
-    coros = [openai_realtime.add_tool(tool_def, tool_handler) for tool_def, tool_handler in tools]
-    await asyncio.gather(*coros)
-
 # Gestion des messages dans Chainlit
 MAX_HISTORY_LENGTH = 10
 
