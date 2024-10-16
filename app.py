@@ -7,7 +7,6 @@ import json
 import datetime
 import logging
 from typing import Dict, Optional
-import starters
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -48,58 +47,29 @@ current_day = current_date.day
 current_month = current_date.month
 current_year = current_date.year
 
+# Définir le system prompt global
+SYSTEM_PROMPT = """Tu es un assistant qui permet aux utilisateurs de répondre à des questions sur la tech, mais aussi à donner de l'information et à réagir par rapport à des conversations WhatsApp. Tu communiques avec un ton pincanté et des emojis chauds tels que 🌶️ ou 🔥. Tu n'as pas ta langue dans ta poche."""
+
 # Fonction pour récupérer les données dans la table "IA" pour une date donnée
 def get_ia_data_for_date(date_str):
     response = supabase.table("IA").select("*").eq("Date", date_str).execute()
     logging.debug("Données récupérées : %s", response.data)
     return response.data
 
-# Fonction pour générer un résumé détaillé des données
-def generate_summary(data):
-    if not data:
-        return "Aucune information trouvée pour la période spécifiée."
-    else:
-        data_str = json.dumps(data, ensure_ascii=False)
-        messages = [
-            {"role": "system", "content": """Tu es un assistant qui permet aux utilisateurs de répondre à des questions sur la tech, mais aussi à donner de l'information et à réagir par rapport à des conversations whatsapp. Tu communiques avec un ton pincanté et des emojis chauds tels que 🌶️ ou 🔥. Tu n'as pas ta langue dans ta poche."""},
-            {"role": "user", "content": f"Voici la conversation :\n\n{data_str}"}
-        ]
-        summary = ""
-
-        completion = openai.ChatCompletion.create(
-            model="gpt-4o-mini-2024-07-18",
-            messages=messages,
-            stream=True,
-            max_tokens=2000,  # Limite de tokens pour la sortie
-            temperature=0.8   # Température pour ajuster la créativité
-        )
-
-        for part in completion:
-            delta = part.choices[0].delta
-            if hasattr(delta, 'content') and delta.content is not None:
-                summary += delta.content
-
-        return summary
-
 # Définition de la fonction au format JSON pour le function calling
 function_definition = {
-  "type": "function",
-  "function": {
     "name": "get_ia_data_for_date",
-    "description": "Récupérer et résumer les données d'IA de Supabase pour une date spécifique",
+    "description": "Récupérer les données d'IA de Supabase pour une date spécifique",
     "parameters": {
-      "type": "object",
-      "properties": {
-        "date": {
-          "type": "string",
-          "description": "La date au format AAAA-MM-JJ (YYYY-MM-DD)"
-        }
-      },
-      "required": [
-        "date"
-      ]
+        "type": "object",
+        "properties": {
+            "date": {
+                "type": "string",
+                "description": "La date au format AAAA-MM-JJ (YYYY-MM-DD)"
+            }
+        },
+        "required": ["date"]
     }
-  }
 }
 
 # Fonction de gestion de l'appel de fonction pour OpenAI
@@ -110,19 +80,18 @@ def call_function_with_parameters(function_name, function_args_json):
         if date_str:
             logging.info(f"Date fournie par l'IA : {date_str}")
             function_response = get_ia_data_for_date(date_str)
-            summary = generate_summary(function_response)
-            return summary
+            # Convertir les données en une chaîne lisible
+            if not function_response:
+                return "Aucune information trouvée pour la date spécifiée."
+            data_str = json.dumps(function_response, ensure_ascii=False, indent=2)
+            return f"Voici les données pour la date {date_str} :\n{data_str}"
         else:
             return "Date non spécifiée."
     return "Aucune fonction correspondante trouvée."
 
 # Fonction pour envoyer la requête à OpenAI avec streaming et function calling
 async def get_openai_response(conversation_history, msg):
-    system_message = f"""
-    Vous êtes un assistant utile qui aide à récupérer des données d'IA pour une date spécifiée.
-    Nous sommes le {current_day}/{current_month}/{current_year}.
-    Fournissez toujours la date au format AAAA-MM-JJ (YYYY-MM-DD).
-    """
+    system_message = f"{SYSTEM_PROMPT}\nNous sommes le {current_day}/{current_month}/{current_year}."
 
     messages = [{"role": "system", "content": system_message}] + conversation_history
 
@@ -133,13 +102,13 @@ async def get_openai_response(conversation_history, msg):
 
     # Appel à OpenAI avec la définition de la fonction incluse
     completion = await openai.ChatCompletion.acreate(
-        model="gpt-4o-mini-2024-07-18",
+        model="gpt-4o-mini-2024-07-18",  # Correction du nom du modèle
         messages=messages,
-        functions=[function_definition["function"]],
+        functions=[function_definition],
         function_call="auto",
         stream=True,
-        max_tokens=500,  # Limite de tokens pour la sortie
-        temperature=0.7   # Température pour ajuster la créativité
+        max_tokens=1500,  # Ajustement pour des réponses plus détaillées
+        temperature=0.8   # Température pour ajuster la créativité
     )
 
     async for part in completion:
@@ -164,9 +133,6 @@ async def get_openai_response(conversation_history, msg):
         logging.info(f"Appel de fonction détecté : {function_name}")
         logging.info(f"Arguments de la fonction : {function_args}")
 
-        assistant_message = {"role": "assistant", "content": None, "function_call": {"name": function_name, "arguments": function_args}}
-        conversation_history.append(assistant_message)
-
         function_response = call_function_with_parameters(function_name, function_args)
 
         function_message = {"role": "function", "name": function_name, "content": function_response}
@@ -179,9 +145,11 @@ async def get_openai_response(conversation_history, msg):
         assistant_response = ""
 
         completion = await openai.ChatCompletion.acreate(
-            model="gpt-4o-mini-2024-07-18",
+            model="gpt-4o-mini-2024-07-18",  # Correction du nom du modèle
             messages=messages,
-            stream=True
+            stream=True,
+            max_tokens=1500,  # Ajustement pour des réponses plus détaillées
+            temperature=0.8    # Température pour ajuster la créativité
         )
 
         async for part in completion:
