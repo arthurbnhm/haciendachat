@@ -1,23 +1,19 @@
 import os
+from supabase import create_client, Client
+from dotenv import load_dotenv
+import chainlit as cl
+import openai
 import json
 import datetime
 import logging
 from typing import Dict, Optional
 
-from dotenv import load_dotenv
-from supabase import create_client, Client
-import openai
-import chainlit as cl
-from aiocache import cached, Cache
-
-import starters  # Assurez-vous que ce module est nécessaire et correctement utilisé
+import starters
 
 # Charger les variables d'environnement
 load_dotenv()
 
-MAX_HISTORY_LENGTH = 20
-
-# Configuration des variables d'environnement
+# Configuration de Supabase, OpenAI et Chainlit
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -26,14 +22,13 @@ CHAINLIT_AUTH_SECRET = os.getenv("CHAINLIT_AUTH_SECRET")
 OAUTH_GOOGLE_CLIENT_SECRET = os.getenv("OAUTH_GOOGLE_CLIENT_SECRET")
 CHAINLIT_URL = os.getenv("CHAINLIT_URL")
 
-# Vérifier que toutes les variables d'environnement requises sont définies, sauf PORT
+# Vérifier que toutes les variables d'environnement requises sont définies
 missing_env_vars = []
 required_vars = [
     "SUPABASE_URL", "SUPABASE_KEY", "OPENAI_API_KEY",
     "OAUTH_GOOGLE_CLIENT_ID", "OAUTH_GOOGLE_CLIENT_SECRET",
     "CHAINLIT_URL", "CHAINLIT_AUTH_SECRET"
 ]
-
 for var in required_vars:
     if not os.getenv(var):
         missing_env_vars.append(var)
@@ -54,50 +49,45 @@ current_day = current_date.day
 current_month = current_date.month
 current_year = current_date.year
 
-# Fonction asynchrone pour récupérer les données dans la table "IA" pour une date donnée
-@cached(ttl=300, cache=Cache.MEMORY)
-async def get_ia_data_for_date(date_str: str):
-    response = await supabase.table("IA").select("column1, column2").eq("Date", date_str).execute()
+# Fonction pour récupérer les données dans la table "IA" pour une date donnée
+def get_ia_data_for_date(date_str):
+    response = supabase.table("IA").select("*").eq("Date", date_str).execute()
     logging.debug("Données récupérées : %s", response.data)
     return response.data
 
 # Fonction pour générer un résumé détaillé des données
-@cached(ttl=600, cache=Cache.MEMORY)
 def generate_summary(data):
     if not data:
         return "Aucune information trouvée pour la période spécifiée."
-    
-    # Sélectionner uniquement les informations nécessaires
-    relevant_data = [{"important_field1": item["important_field1"], "important_field2": item["important_field2"]} for item in data]
-    data_str = json.dumps(relevant_data, ensure_ascii=False)
-    messages = [
-        {"role": "system", "content": "Vous êtes un assistant concis qui résume des conversations."},
-        {"role": "user", "content": f"Fournissez un résumé concis des conversations suivantes :\n\n{data_str}"}
-    ]
-    summary = ""
+    else:
+        data_str = json.dumps(data, ensure_ascii=False)
+        messages = [
+            {"role": "system", "content": "Vous êtes un assistant qui résume des conversations."},
+            {"role": "user", "content": f"Veuillez fournir un résumé détaillé des conversations suivantes :\n\n{data_str}"}
+        ]
+        summary = ""
 
-    completion = openai.ChatCompletion.create(
-        model="gpt-4o-mini-2024-07-18",
-        messages=messages,
-        stream=True,
-        max_tokens=500
-    )
+        completion = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=messages,
+            stream=True
+        )
 
-    for part in completion:
-        delta = part.choices[0].delta
-        if hasattr(delta, 'content') and delta.content is not None:
-            summary += delta.content
+        for part in completion:
+            delta = part.choices[0].delta
+            if hasattr(delta, 'content') and delta.content is not None:
+                summary += delta.content
 
-    return summary
+        return summary
 
 # Fonction de gestion de l'appel de fonction pour OpenAI
-def call_function_with_parameters(function_name: str, function_args_json: str):
+def call_function_with_parameters(function_name, function_args_json):
     function_args = json.loads(function_args_json)
     if function_name == "get_ia_data_for_date":
         date_str = function_args.get("date")
         if date_str:
             logging.info(f"Date fournie par l'IA : {date_str}")
-            function_response = asyncio.run(get_ia_data_for_date(date_str))
+            function_response = get_ia_data_for_date(date_str)
             summary = generate_summary(function_response)
             return summary
         else:
@@ -120,7 +110,7 @@ async def get_openai_response(conversation_history, msg):
     function_args = ""
 
     completion = await openai.ChatCompletion.acreate(
-        model="gpt-4o-mini-2024-07-18",
+        model="gpt-4",
         messages=messages,
         functions=[
             {
@@ -163,11 +153,7 @@ async def get_openai_response(conversation_history, msg):
         logging.info(f"Appel de fonction détecté : {function_name}")
         logging.info(f"Arguments de la fonction : {function_args}")
 
-        assistant_message = {
-            "role": "assistant",
-            "content": None,
-            "function_call": {"name": function_name, "arguments": function_args}
-        }
+        assistant_message = {"role": "assistant", "content": None, "function_call": {"name": function_name, "arguments": function_args}}
         conversation_history.append(assistant_message)
 
         function_response = call_function_with_parameters(function_name, function_args)
@@ -178,7 +164,7 @@ async def get_openai_response(conversation_history, msg):
         messages = [{"role": "system", "content": system_message}] + conversation_history
 
         completion = await openai.ChatCompletion.acreate(
-            model="gpt-4o-mini-2024-07-18",
+            model="gpt-4",
             messages=messages,
             stream=True
         )
@@ -201,6 +187,9 @@ async def get_openai_response(conversation_history, msg):
 
         logging.info("Réponse finale envoyée à l'utilisateur : %s", assistant_response)
         return assistant_response
+
+# Définir la taille maximale de l'historique
+MAX_HISTORY_LENGTH = 10
 
 # Gestion des messages dans Chainlit
 @cl.on_message
@@ -240,10 +229,6 @@ def oauth_callback(
         # Récupérer les informations de l'utilisateur
         email = raw_user_data.get("email")
         name = raw_user_data.get("name")
-
-        if not email or not name:
-            logging.warning("Données utilisateur incomplètes reçues via OAuth.")
-            return None
 
         # Vérifier si l'utilisateur existe déjà dans Supabase
         response = supabase.table("users").select("*").eq("email", email).execute()
