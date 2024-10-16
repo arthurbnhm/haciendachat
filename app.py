@@ -209,7 +209,7 @@ async def main(message: cl.Message):
     # Mettre à jour l'historique de conversation dans la session utilisateur
     cl.user_session.set('conversation_history', conversation_history)
 
-# Fonction de callback OAuth pour Google
+# Fonction de callback OAuth pour Google (utilise Supabase comme point central)
 @cl.oauth_callback
 def oauth_callback(
     provider_id: str,
@@ -220,3 +220,10 @@ def oauth_callback(
     if provider_id == "google":
         return default_user  # L'utilisateur est déjà géré nativement par Supabase
     return None
+
+# URL d'authentification OAuth via Supabase
+SUPABASE_AUTH_URL = "https://iddctyyffyisxagkorat.supabase.co/auth/v1/authorize?provider=google"
+
+# Fonction pour rediriger vers Google OAuth via Supabase
+def login_with_google():
+    return cl.redirect(SUPABASE_AUTH_URL)
