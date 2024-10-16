@@ -48,7 +48,7 @@ current_day = current_date.day
 current_month = current_date.month
 current_year = current_date.year
 
-# Définir le system prompt global
+# Définir le system prompt global (mis à jour pour inclure la nouvelle fonctionnalité)
 SYSTEM_PROMPT = """Tu es un assistant dynamique, très pincanté qui récapitule les discussions tech issues de conversations WhatsApp, en ajoutant du contexte et des détails. Tu formates tes réponses en markdown. Ton style est chaleureux et engageant, avec un soupçon de piquant et des emojis 🌶️ ou 🔥. Plutôt que de lister les interventions par utilisateur, tu mets l'accent sur les thèmes abordés et les points de vue partagés, en les intégrant dans un récit fluide. En fonction des conversations, tu soulignes les moments importants et suggères des pistes pour approfondir. Tu peux également inclure des liens vers des articles, posts ou outils échangés en markdown. La communauté Whatsapp s'appelle l'Hacienda et Carlos Diaz est le gringo en chef. Tu peux filtrer les discussions par date ou par plage de dates selon les demandes des utilisateurs."""
 
 # Fonction pour récupérer les données dans la table "IA" pour une date donnée
@@ -147,7 +147,7 @@ async def get_openai_response(conversation_history, msg):
         functions=function_definitions,  # Utilisation de la liste complète
         function_call="auto",
         stream=True,
-        max_tokens=1500,
+        max_tokens=3000,
         temperature=0.8
     )
 
@@ -188,7 +188,7 @@ async def get_openai_response(conversation_history, msg):
             model="gpt-4o-mini-2024-07-18",
             messages=messages,
             stream=True,
-            max_tokens=1500,
+            max_tokens=3000,
             temperature=0.8
         )
 
@@ -248,7 +248,7 @@ async def main(message: cl.Message):
     # Mettre à jour l'historique de conversation dans la session utilisateur
     cl.user_session.set('conversation_history', conversation_history)
 
-# Fonction de callback OAuth pour Google avec vérification de l'accès
+# Fonction de callback OAuth pour Google
 @cl.oauth_callback
 def oauth_callback(
     provider_id: str,
@@ -265,23 +265,19 @@ def oauth_callback(
         response = supabase.table("users").select("*").eq("email", email).execute()
         user_data = response.data
 
-        if not user_data:
-            # Créer un nouvel utilisateur avec access=False par défaut
-            supabase.table("users").insert({"email": email, "name": name, "access": False}).execute()
-            logging.info(f"Nouvel utilisateur créé : {email} avec access=False")
-            # Informer l'utilisateur que son accès est en attente
-            cl.Message(content="Votre compte a été créé, mais vous devez attendre l'approbation pour accéder à l'application.").send()
-            return None  # Refuser l'accès jusqu'à approbation
-        else:
-            user = user_data[0]
-            access = user.get("access", False)
-            if access:
-                logging.info(f"Utilisateur autorisé : {email}")
-                return default_user  # Autoriser l'accès
+        if user_data:
+            # Vérifier la colonne "access"
+            access = user_data[0].get("access", False)
+            if not access:
+                logging.warning(f"Accès refusé pour l'utilisateur : {email}")
+                # Retourner un message d'erreur à l'utilisateur
+                raise ValueError("Accès refusé. Vous n'avez pas les droits nécessaires.")
             else:
-                logging.info(f"Accès refusé pour l'utilisateur : {email}")
-                # Informer l'utilisateur que son accès est refusé
-                cl.Message(content="Votre accès à l'application a été refusé. Veuillez contacter l'administrateur.").send()
-                return None  # Refuser l'accès
+                logging.info(f"Utilisateur existant avec accès : {email}")
+        else:
+            # Créer un nouvel utilisateur
+            supabase.table("users").insert({"email": email, "name": name}).execute()
+            logging.info(f"Nouvel utilisateur créé : {email}")
 
+        return default_user
     return None
