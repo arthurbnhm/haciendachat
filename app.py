@@ -214,5 +214,6 @@ async def main(message: cl.Message):
 def oauth_callback(
     provider_id: str,
     token: str,
-    raw_user_data: Dict
+    raw_user_data: Dict[str, str],
+    default_user: cl.User,
 )
