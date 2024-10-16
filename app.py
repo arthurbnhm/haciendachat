@@ -209,11 +209,14 @@ async def main(message: cl.Message):
     # Mettre à jour l'historique de conversation dans la session utilisateur
     cl.user_session.set('conversation_history', conversation_history)
 
-# Fonction de callback OAuth pour Google (sans gestion manuelle des utilisateurs)
+# Fonction de callback OAuth pour Google
 @cl.oauth_callback
 def oauth_callback(
     provider_id: str,
     token: str,
     raw_user_data: Dict[str, str],
     default_user: cl.User,
-)
+) -> Optional[cl.User]:
+    if provider_id == "google":
+        return default_user  # L'utilisateur est déjà géré nativement par Supabase
+    return None
