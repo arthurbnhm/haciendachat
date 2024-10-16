@@ -28,7 +28,7 @@ FUNCTION_DEFINITIONS = [
             "properties": {
                 "chart_type": {
                     "type": "string",
-                    "description": "Le type de graphique à générer (e.g., bar, line)"
+                    "description": "Le type de graphique à générer (e.g., bar, line, scatter)"
                 },
                 "data": {
                     "type": "object",
@@ -47,6 +47,14 @@ FUNCTION_DEFINITIONS = [
                         "title": {
                             "type": "string",
                             "description": "Le titre du graphique"
+                        },
+                        "labels": {
+                            "type": "object",
+                            "description": "Labels supplémentaires pour le graphique",
+                            "properties": {
+                                "xaxis": {"type": "string", "description": "Label de l'axe X"},
+                                "yaxis": {"type": "string", "description": "Label de l'axe Y"}
+                            }
                         }
                     },
                     "required": ["x", "y"]
@@ -65,26 +73,39 @@ def get_ia_data_for_date(supabase: Client, date_str: str):
     logging.debug("Données récupérées : %s", response.data)
     return response.data
 
-def generate_plotly_chart(supabase: Client, chart_type: str, data: Dict[str, Any]):
+def generate_plotly_chart(chart_type: str, data: Dict[str, Any]):
     """
     Génère un graphique Plotly basé sur les paramètres fournis.
     """
     try:
-        if chart_type == "bar":
+        fig = None
+        if chart_type.lower() == "bar":
             fig = go.Figure(data=[go.Bar(x=data["x"], y=data["y"])])
-        elif chart_type == "line":
+        elif chart_type.lower() == "line":
             fig = go.Figure(data=[go.Scatter(x=data["x"], y=data["y"], mode='lines')])
+        elif chart_type.lower() == "scatter":
+            fig = go.Figure(data=[go.Scatter(x=data["x"], y=data["y"], mode='markers')])
         else:
             return json.dumps({"error": f"Type de graphique '{chart_type}' non supporté."})
         
+        # Ajouter un titre si spécifié
         if "title" in data:
             fig.update_layout(title=data["title"])
+        
+        # Ajouter des labels si spécifiés
+        if "labels" in data:
+            labels = data["labels"]
+            if "xaxis" in labels:
+                fig.update_xaxes(title=labels["xaxis"])
+            if "yaxis" in labels:
+                fig.update_yaxes(title=labels["yaxis"])
         
         # Sérialiser le graphique en JSON
         fig_json = fig.to_json()
         return json.dumps({
             "text": f"Voici le graphique '{data.get('title', '')}':",
-            "plotly_figure": fig_json
+            "plotly_figure": fig_json,
+            "title": data.get('title', 'Chart')
         })
     except Exception as e:
         logging.error("Erreur lors de la génération du graphique Plotly : %s", e)
@@ -102,18 +123,18 @@ def call_function_with_parameters(supabase: Client, function_name: str, function
             function_response = get_ia_data_for_date(supabase, date_str)
             # Convertir les données en une chaîne lisible
             if not function_response:
-                return "Aucune information trouvée pour la date spécifiée."
+                return json.dumps({"error": "Aucune information trouvée pour la date spécifiée."})
             data_str = json.dumps(function_response, ensure_ascii=False, indent=2)
-            return f"Voici les données pour la date {date_str} :\n{data_str}"
+            return json.dumps({"text": f"Voici les données pour la date {date_str} :\n{data_str}", "data": function_response})
         else:
-            return "Date non spécifiée."
+            return json.dumps({"error": "Date non spécifiée."})
     elif function_name == "generate_plotly_chart":
         chart_type = function_args.get("chart_type")
         data = function_args.get("data")
         if chart_type and data:
             logging.info(f"Type de graphique demandé : {chart_type}")
-            function_response = generate_plotly_chart(supabase, chart_type, data)
+            function_response = generate_plotly_chart(chart_type, data)
             return function_response
         else:
             return json.dumps({"error": "Paramètres 'chart_type' et 'data' sont requis."})
-    return "Aucune fonction correspondante trouvée."
+    return json.dumps({"error": "Aucune fonction correspondante trouvée."})
