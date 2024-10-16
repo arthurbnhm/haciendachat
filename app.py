@@ -8,6 +8,7 @@ import datetime
 import logging
 from typing import Dict, Optional
 import starters
+from datetime import datetime  # Import pour la validation des dates
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -43,13 +44,13 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 openai.api_key = OPENAI_API_KEY
 
 # Obtenir la date actuelle
-current_date = datetime.datetime.now()
+current_date = datetime.now()
 current_day = current_date.day
 current_month = current_date.month
 current_year = current_date.year
 
-# Définir le system prompt global
-SYSTEM_PROMPT = """Tu es un assistant dynamique, très pincanté qui récapitule les discussions tech issues de conversations WhatsApp, en ajoutant du contexte et des détails. Tu formates tes réponses en markdown. Ton style est chaleureux et engageant, avec un soupçon de piquant et des emojis 🌶️ ou 🔥. Plutôt que de lister les interventions par utilisateur, tu mets l'accent sur les thèmes abordés et les points de vue partagés, en les intégrant dans un récit fluide. En fonction des conversations, tu soulignes les moments importants et suggères des pistes pour approfondir. Tu peux également inclure des liens vers des articles, posts ou outils échangés en markdown. La communauté Whatsapp s'appelle l'Hacienda et Carlos Diaz est le gringo en chef."""
+# Définir le system prompt global (mis à jour pour inclure la nouvelle fonctionnalité)
+SYSTEM_PROMPT = """Tu es un assistant dynamique, très pincanté qui récapitule les discussions tech issues de conversations WhatsApp, en ajoutant du contexte et des détails. Tu formates tes réponses en markdown. Ton style est chaleureux et engageant, avec un soupçon de piquant et des emojis 🌶️ ou 🔥. Plutôt que de lister les interventions par utilisateur, tu mets l'accent sur les thèmes abordés et les points de vue partagés, en les intégrant dans un récit fluide. En fonction des conversations, tu soulignes les moments importants et suggères des pistes pour approfondir. Tu peux également inclure des liens vers des articles, posts ou outils échangés en markdown. La communauté Whatsapp s'appelle l'Hacienda et Carlos Diaz est le gringo en chef. Tu peux filtrer les discussions par date ou par plage de dates selon les demandes des utilisateurs."""
 
 # Fonction pour récupérer les données dans la table "IA" pour une date donnée
 def get_ia_data_for_date(date_str):
@@ -57,37 +58,85 @@ def get_ia_data_for_date(date_str):
     logging.debug("Données récupérées : %s", response.data)
     return response.data
 
-# Définition de la fonction au format JSON pour le function calling
-function_definition = {
-    "name": "get_ia_data_for_date",
-    "description": "Récupérer les données d'IA de Supabase pour une date spécifique",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "date": {
-                "type": "string",
-                "description": "La date au format AAAA-MM-JJ (YYYY-MM-DD)"
-            }
-        },
-        "required": ["date"]
+# Fonction pour récupérer les données dans la table "IA" entre deux dates données
+def get_ia_data_between_dates(start_date_str, end_date_str):
+    response = supabase.table("IA").select("*").gte("Date", start_date_str).lte("Date", end_date_str).execute()
+    logging.debug("Données récupérées entre %s et %s : %s", start_date_str, end_date_str, response.data)
+    return response.data
+
+# Définition des fonctions au format JSON pour le function calling
+function_definitions = [
+    {
+        "name": "get_ia_data_for_date",
+        "description": "Récupérer les données d'IA de Supabase pour une date spécifique",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string",
+                    "description": "La date au format AAAA-MM-JJ (YYYY-MM-DD)"
+                }
+            },
+            "required": ["date"]
+        }
+    },
+    {
+        "name": "get_ia_data_between_dates",
+        "description": "Récupérer les données d'IA de Supabase entre deux dates spécifiques",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "start_date": {
+                    "type": "string",
+                    "description": "La date de début au format AAAA-MM-JJ (YYYY-MM-DD)"
+                },
+                "end_date": {
+                    "type": "string",
+                    "description": "La date de fin au format AAAA-MM-JJ (YYYY-MM-DD)"
+                }
+            },
+            "required": ["start_date", "end_date"]
+        }
     }
-}
+]
+
+# Fonction pour valider le format des dates
+def validate_date(date_str):
+    try:
+        datetime.strptime(date_str, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
 
 # Fonction de gestion de l'appel de fonction pour OpenAI
 def call_function_with_parameters(function_name, function_args_json):
     function_args = json.loads(function_args_json)
+    
     if function_name == "get_ia_data_for_date":
         date_str = function_args.get("date")
-        if date_str:
+        if date_str and validate_date(date_str):
             logging.info(f"Date fournie par l'IA : {date_str}")
             function_response = get_ia_data_for_date(date_str)
-            # Convertir les données en une chaîne lisible
             if not function_response:
                 return "Aucune information trouvée pour la date spécifiée."
             data_str = json.dumps(function_response, ensure_ascii=False, indent=2)
             return f"Voici les données pour la date {date_str} :\n{data_str}"
         else:
-            return "Date non spécifiée."
+            return "Format de date invalide ou date non spécifiée."
+    
+    elif function_name == "get_ia_data_between_dates":
+        start_date_str = function_args.get("start_date")
+        end_date_str = function_args.get("end_date")
+        if start_date_str and end_date_str and validate_date(start_date_str) and validate_date(end_date_str):
+            logging.info(f"Plage de dates fournie par l'IA : {start_date_str} à {end_date_str}")
+            function_response = get_ia_data_between_dates(start_date_str, end_date_str)
+            if not function_response:
+                return "Aucune information trouvée pour la plage de dates spécifiée."
+            data_str = json.dumps(function_response, ensure_ascii=False, indent=2)
+            return f"Voici les données entre le {start_date_str} et le {end_date_str} :\n{data_str}"
+        else:
+            return "Format de date invalide ou dates de début et/ou de fin non spécifiées."
+    
     return "Aucune fonction correspondante trouvée."
 
 # Fonction pour envoyer la requête à OpenAI avec streaming et function calling
@@ -101,15 +150,15 @@ async def get_openai_response(conversation_history, msg):
     function_name = None
     function_args = ""
 
-    # Appel à OpenAI avec la définition de la fonction incluse
+    # Appel à OpenAI avec toutes les définitions de fonctions incluses
     completion = await openai.ChatCompletion.acreate(
         model="gpt-4o-mini-2024-07-18",  # Correction du nom du modèle
         messages=messages,
-        functions=[function_definition],
+        functions=function_definitions,  # Utilisation de la liste complète
         function_call="auto",
         stream=True,
         max_tokens=1500,  # Ajustement pour des réponses plus détaillées
-        temperature=0.8   # Température pour ajuster la créativité
+        temperature=0.8    # Température pour ajuster la créativité
     )
 
     async for part in completion:
