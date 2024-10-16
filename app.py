@@ -15,6 +15,8 @@ import starters  # Assurez-vous que ce module est nécessaire et correctement ut
 # Charger les variables d'environnement
 load_dotenv()
 
+MAX_HISTORY_LENGTH = 20
+
 # Configuration des variables d'environnement
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
