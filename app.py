@@ -56,8 +56,8 @@ SYSTEM_PROMPT = (
     "Carlos Diaz est le gringo en chef. Tu peux filtrer les discussions par date ou par plage de dates selon les demandes des utilisateurs."
 )
 
-# Définir la taille maximale de l'historique
-MAX_HISTORY_LENGTH = 10
+# Définir la taille maximale de l'historique (optionnel)
+MAX_HISTORY_LENGTH = 10  # Vous pouvez ajuster ou supprimer cette limite si nécessaire
 
 # Définition des fonctions au format JSON pour le function calling
 function_definitions = [
@@ -157,10 +157,20 @@ def call_function_with_parameters(function_name: str, function_args_json: str) -
     return "Aucune fonction correspondante trouvée."
 
 # Fonction pour envoyer la requête à OpenAI avec streaming et function calling
-async def get_openai_response(conversation_history: List[Dict], msg: cl.Message) -> str:
+async def get_openai_response(msg: cl.Message) -> str:
     current_date = dt.now()
     system_message = f"{SYSTEM_PROMPT}\nNous sommes le {current_date.day}/{current_date.month}/{current_date.year}."
-    messages = [{"role": "system", "content": system_message}] + conversation_history
+    
+    # Obtenir les messages du contexte de chat au format OpenAI
+    chat_messages = cl.chat_context.to_openai()
+    
+    # Optionnel : Limiter la taille de l'historique
+    if MAX_HISTORY_LENGTH:
+        # Inclure uniquement les derniers messages selon la limite définie
+        chat_messages = chat_messages[-MAX_HISTORY_LENGTH:]
+    
+    # Préparer le message complet à envoyer à OpenAI
+    messages = [{"role": "system", "content": system_message}] + chat_messages
 
     assistant_response = ""
     function_call = None
@@ -173,7 +183,7 @@ async def get_openai_response(conversation_history: List[Dict], msg: cl.Message)
         functions=function_definitions,
         function_call="auto",
         stream=True,
-        max_tokens=3000,
+        max_tokens=1500,
         temperature=0.8
     )
 
@@ -202,10 +212,10 @@ async def get_openai_response(conversation_history: List[Dict], msg: cl.Message)
         function_response = call_function_with_parameters(function_name, function_args)
 
         function_message = {"role": "function", "name": function_name, "content": function_response}
-        conversation_history.append(function_message)
+        cl.chat_context.append(function_message)  # Ajout au contexte de chat
 
         # Mettre à jour les messages avec le résultat de la fonction
-        messages = [{"role": "system", "content": system_message}] + conversation_history
+        messages = [{"role": "system", "content": system_message}] + cl.chat_context.to_openai()
 
         # Appel final pour donner la réponse à l'utilisateur
         assistant_response = ""
@@ -214,7 +224,7 @@ async def get_openai_response(conversation_history: List[Dict], msg: cl.Message)
             model="gpt-4o-mini-2024-07-18",  # Assurez-vous d'utiliser le modèle correct
             messages=messages,
             stream=True,
-            max_tokens=3000,
+            max_tokens=1500,
             temperature=0.8
         )
 
@@ -225,11 +235,11 @@ async def get_openai_response(conversation_history: List[Dict], msg: cl.Message)
                 assistant_response += token
                 await msg.stream_token(token)
 
-        conversation_history.append({"role": "assistant", "content": assistant_response})
+        cl.chat_context.append({"role": "assistant", "content": assistant_response})
         logging.info("Réponse finale envoyée à l'utilisateur : %s", assistant_response)
         return assistant_response
     else:
-        conversation_history.append({"role": "assistant", "content": assistant_response})
+        cl.chat_context.append({"role": "assistant", "content": assistant_response})
         logging.info("Réponse finale envoyée à l'utilisateur : %s", assistant_response)
         return assistant_response
 
@@ -261,15 +271,8 @@ def oauth_callback(
 async def handle_message(message: cl.Message):
     user_message = message.content
 
-    # Initialiser ou récupérer l'historique de conversation
-    conversation_history = cl.user_session.get('conversation_history', [])
-    conversation_history.append({"role": "user", "content": user_message})
-
-    # Limiter la taille de l'historique
-    if len(conversation_history) > MAX_HISTORY_LENGTH:
-        conversation_history = conversation_history[-MAX_HISTORY_LENGTH:]
-
-    cl.user_session.set('conversation_history', conversation_history)
+    # Les messages sont automatiquement ajoutés au contexte de chat par Chainlit
+    cl.chat_context.append({"role": "user", "content": user_message})
 
     # Envoyer un message de chargement
     loader_msg = cl.Message(content="Laisse moi ajouter un peu de 🌶️")
@@ -277,7 +280,7 @@ async def handle_message(message: cl.Message):
 
     try:
         # Obtenir la réponse de l'IA et streamer les tokens
-        response_text = await get_openai_response(conversation_history, loader_msg)
+        response_text = await get_openai_response(loader_msg)
     except Exception as e:
         logging.error("Erreur lors de l'obtention de la réponse : %s", e)
         response_text = "🌶️ Une erreur s'est produite lors du traitement de votre demande."
@@ -285,6 +288,3 @@ async def handle_message(message: cl.Message):
     # Mettre à jour le message de chargement avec la réponse finale
     loader_msg.content = response_text
     await loader_msg.update()
-
-    # Mettre à jour l'historique de conversation dans la session utilisateur
-    cl.user_session.set('conversation_history', conversation_history)
