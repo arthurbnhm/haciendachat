@@ -68,7 +68,7 @@ def generate_summary(data):
         summary = ""
 
         completion = openai.ChatCompletion.create(
-            model="gpt-4",
+            model="gpt-4o-mini-2024-07-18",
             messages=messages,
             stream=True
         )
@@ -110,7 +110,7 @@ async def get_openai_response(conversation_history, msg):
     function_args = ""
 
     completion = await openai.ChatCompletion.acreate(
-        model="gpt-4",
+        model="gpt-4o-mini-2024-07-18",
         messages=messages,
         functions=[
             {
@@ -164,7 +164,7 @@ async def get_openai_response(conversation_history, msg):
         messages = [{"role": "system", "content": system_message}] + conversation_history
 
         completion = await openai.ChatCompletion.acreate(
-            model="gpt-4",
+            model="gpt-4o-mini-2024-07-18",
             messages=messages,
             stream=True
         )
@@ -191,7 +191,7 @@ async def get_openai_response(conversation_history, msg):
 # Définir la taille maximale de l'historique
 MAX_HISTORY_LENGTH = 10
 
-# Gestion des messages dans Chainlit
+# Gestion des messages dans Chainlit avec Loader
 @cl.on_message
 async def main(message: cl.Message):
     user_message = message.content
@@ -208,14 +208,26 @@ async def main(message: cl.Message):
 
     cl.user_session.set('conversation_history', conversation_history)
 
+    # Envoyer un message vide pour déclencher le loader
     msg = cl.Message(content="")
     await msg.send()
 
-    response_text = await get_openai_response(conversation_history, msg)
+    try:
+        # Obtenir la réponse d'OpenAI avec le loader actif
+        response_text = await get_openai_response(conversation_history, msg)
+    except Exception as e:
+        logging.error("Erreur lors du traitement de la requête : %s", e)
+        response_text = "Désolé, une erreur est survenue lors du traitement de votre demande."
 
+    # Mettre à jour le message avec la réponse finale
+    msg.content = response_text
+    await msg.update()
+
+    # Mettre à jour l'historique de la conversation
+    conversation_history.append({"role": "assistant", "content": response_text})
     cl.user_session.set('conversation_history', conversation_history)
 
-    await msg.update()
+    logging.info("Réponse finale envoyée à l'utilisateur : %s", response_text)
 
 # Fonction de callback OAuth pour Google
 @cl.oauth_callback
