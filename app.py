@@ -248,7 +248,7 @@ async def main(message: cl.Message):
     # Mettre à jour l'historique de conversation dans la session utilisateur
     cl.user_session.set('conversation_history', conversation_history)
 
-# Fonction de callback OAuth pour Google
+# Fonction de callback OAuth pour Google avec vérification de l'accès
 @cl.oauth_callback
 def oauth_callback(
     provider_id: str,
@@ -266,11 +266,22 @@ def oauth_callback(
         user_data = response.data
 
         if not user_data:
-            # Créer un nouvel utilisateur
-            supabase.table("users").insert({"email": email, "name": name}).execute()
-            logging.info(f"Nouvel utilisateur créé : {email}")
+            # Créer un nouvel utilisateur avec access=False par défaut
+            supabase.table("users").insert({"email": email, "name": name, "access": False}).execute()
+            logging.info(f"Nouvel utilisateur créé : {email} avec access=False")
+            # Informer l'utilisateur que son accès est en attente
+            cl.Message(content="Votre compte a été créé, mais vous devez attendre l'approbation pour accéder à l'application.").send()
+            return None  # Refuser l'accès jusqu'à approbation
         else:
-            logging.info(f"Utilisateur existant : {email}")
+            user = user_data[0]
+            access = user.get("access", False)
+            if access:
+                logging.info(f"Utilisateur autorisé : {email}")
+                return default_user  # Autoriser l'accès
+            else:
+                logging.info(f"Accès refusé pour l'utilisateur : {email}")
+                # Informer l'utilisateur que son accès est refusé
+                cl.Message(content="Votre accès à l'application a été refusé. Veuillez contacter l'administrateur.").send()
+                return None  # Refuser l'accès
 
-        return default_user
     return None
