@@ -147,7 +147,7 @@ async def get_openai_response(conversation_history, msg):
         functions=function_definitions,  # Utilisation de la liste complète
         function_call="auto",
         stream=True,
-        max_tokens=3000,
+        max_tokens=1500,
         temperature=0.8
     )
 
@@ -188,7 +188,7 @@ async def get_openai_response(conversation_history, msg):
             model="gpt-4o-mini-2024-07-18",
             messages=messages,
             stream=True,
-            max_tokens=3000,
+            max_tokens=1500,
             temperature=0.8
         )
 
@@ -265,19 +265,12 @@ def oauth_callback(
         response = supabase.table("users").select("*").eq("email", email).execute()
         user_data = response.data
 
-        if user_data:
-            # Vérifier la colonne "access"
-            access = user_data[0].get("access", False)
-            if not access:
-                logging.warning(f"Accès refusé pour l'utilisateur : {email}")
-                # Retourner un message d'erreur à l'utilisateur
-                raise ValueError("Accès refusé. Vous n'avez pas les droits nécessaires.")
-            else:
-                logging.info(f"Utilisateur existant avec accès : {email}")
-        else:
+        if not user_data:
             # Créer un nouvel utilisateur
             supabase.table("users").insert({"email": email, "name": name}).execute()
             logging.info(f"Nouvel utilisateur créé : {email}")
+        else:
+            logging.info(f"Utilisateur existant : {email}")
 
         return default_user
     return None
