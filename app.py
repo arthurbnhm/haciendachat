@@ -85,7 +85,7 @@ def generate_summary(data):
     summary = ""
 
     completion = openai.ChatCompletion.create(
-        model="gpt-4o-mini-2024-07-18o-mini-2024-07-18",
+        model="gpt-4o-mini-2024-07-18",
         messages=messages,
         stream=True,
         max_tokens=500
@@ -128,7 +128,7 @@ async def get_openai_response(conversation_history, msg):
     function_args = ""
 
     completion = await openai.ChatCompletion.acreate(
-        model="gpt-4o-mini-2024-07-18o-mini-2024-07-18",
+        model="gpt-4o-mini-2024-07-18",
         messages=messages,
         functions=[
             {
@@ -186,7 +186,7 @@ async def get_openai_response(conversation_history, msg):
         messages = [{"role": "system", "content": system_message}] + conversation_history
 
         completion = await openai.ChatCompletion.acreate(
-            model="gpt-4o-mini-2024-07-18o-mini-2024-07-18",
+            model="gpt-4o-mini-2024-07-18",
             messages=messages,
             stream=True
         )
