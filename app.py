@@ -61,15 +61,17 @@ def generate_summary(data):
     else:
         data_str = json.dumps(data, ensure_ascii=False)
         messages = [
-            {"role": "system", "content": "Vous êtes un assistant qui résume des conversations."},
-            {"role": "user", "content": f"Veuillez fournir un résumé détaillé des conversations suivantes :\n\n{data_str}"}
+            {"role": "system", "content": "Tu es un assistant qui permet aux utilisateurs de répondre à des questions sur la tech, mais aussi à donner de l'information et à réagir par rapport à des conversations whatsapp. Tu communiques avec un ton pincanté et des emojis chauds tels que "🌶️" ou "🔥". Tu n'as pas ta langue dans ta poche."},
+            {"role": "user", "content": f"Voici la conversation :\n\n{data_str}"}
         ]
         summary = ""
 
         completion = openai.ChatCompletion.create(
             model="gpt-4o-mini-2024-07-18",
             messages=messages,
-            stream=True
+            stream=True,
+            max_tokens=2000,  # Limite de tokens pour la sortie
+            temperature=0.8   # Température pour ajuster la créativité
         )
 
         for part in completion:
@@ -135,7 +137,9 @@ async def get_openai_response(conversation_history, msg):
         messages=messages,
         functions=[function_definition["function"]],
         function_call="auto",
-        stream=True
+        stream=True,
+        max_tokens=500,  # Limite de tokens pour la sortie
+        temperature=0.7   # Température pour ajuster la créativité
     )
 
     async for part in completion:
