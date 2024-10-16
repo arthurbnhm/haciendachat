@@ -8,8 +8,6 @@ import datetime
 import logging
 from typing import Dict, Optional
 
-import starters
-
 # Charger les variables d'environnement
 load_dotenv()
 
@@ -80,6 +78,27 @@ def generate_summary(data):
 
         return summary
 
+# Définition de la fonction au format JSON pour le function calling
+function_definition = {
+  "type": "function",
+  "function": {
+    "name": "get_ia_data_for_date",
+    "description": "Récupérer et résumer les données d'IA de Supabase pour une date spécifique",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string",
+          "description": "La date au format AAAA-MM-JJ (YYYY-MM-DD)"
+        }
+      },
+      "required": [
+        "date"
+      ]
+    }
+  }
+}
+
 # Fonction de gestion de l'appel de fonction pour OpenAI
 def call_function_with_parameters(function_name, function_args_json):
     function_args = json.loads(function_args_json)
@@ -94,7 +113,7 @@ def call_function_with_parameters(function_name, function_args_json):
             return "Date non spécifiée."
     return "Aucune fonction correspondante trouvée."
 
-# Fonction pour envoyer la requête à OpenAI avec streaming
+# Fonction pour envoyer la requête à OpenAI avec streaming et function calling
 async def get_openai_response(conversation_history, msg):
     system_message = f"""
     Vous êtes un assistant utile qui aide à récupérer des données d'IA pour une date spécifiée.
@@ -109,25 +128,11 @@ async def get_openai_response(conversation_history, msg):
     function_name = None
     function_args = ""
 
+    # Appel à OpenAI avec la définition de la fonction incluse
     completion = await openai.ChatCompletion.acreate(
         model="gpt-4o-mini-2024-07-18",
         messages=messages,
-        functions=[
-            {
-                "name": "get_ia_data_for_date",
-                "description": "Récupérer et résumer les données d'IA de Supabase pour une date spécifique",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "date": {
-                            "type": "string",
-                            "description": "La date au format AAAA-MM-JJ (YYYY-MM-DD)"
-                        }
-                    },
-                    "required": ["date"]
-                }
-            }
-        ],
+        functions=[function_definition["function"]],
         function_call="auto",
         stream=True
     )
@@ -149,6 +154,7 @@ async def get_openai_response(conversation_history, msg):
         else:
             pass
 
+    # Si une fonction est appelée, exécuter la fonction correspondante
     if function_call:
         logging.info(f"Appel de fonction détecté : {function_name}")
         logging.info(f"Arguments de la fonction : {function_args}")
@@ -161,15 +167,17 @@ async def get_openai_response(conversation_history, msg):
         function_message = {"role": "function", "name": function_name, "content": function_response}
         conversation_history.append(function_message)
 
+        # Mettre à jour les messages avec le résultat de la fonction
         messages = [{"role": "system", "content": system_message}] + conversation_history
+
+        # Appel final pour donner la réponse à l'utilisateur
+        assistant_response = ""
 
         completion = await openai.ChatCompletion.acreate(
             model="gpt-4o-mini-2024-07-18",
             messages=messages,
             stream=True
         )
-
-        assistant_response = ""
 
         async for part in completion:
             delta = part.choices[0].delta
@@ -218,7 +226,7 @@ async def main(message: cl.Message):
         response_text = await get_openai_response(conversation_history, loader_msg)
     except Exception as e:
         logging.error("Erreur lors de l'obtention de la réponse : %s", e)
-        response_text = "⚠️ Une erreur s'est produite lors du traitement de votre demande."
+        response_text = "🌶️ Une erreur s'est produite lors du traitement de votre demande."
 
     # Mettre à jour le message de chargement avec la réponse finale
     loader_msg.content = response_text
