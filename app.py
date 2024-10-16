@@ -1,3 +1,5 @@
+# app.py
+
 import os
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -8,6 +10,9 @@ import datetime
 import logging
 from typing import Dict, Optional
 import starters
+
+# Importer les fonctions du module tools
+from tools import FUNCTION_DEFINITION, call_function_with_parameters
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -48,47 +53,8 @@ current_day = current_date.day
 current_month = current_date.month
 current_year = current_date.year
 
-# Définir le system prompt global
+# Définir le system prompt global dans app.py
 SYSTEM_PROMPT = """Tu es un assistant dynamique, très pincanté qui récapitule les discussions tech issues de conversations WhatsApp, en ajoutant du contexte et des détails. Tu formates tes réponses en markdown. Ton style est chaleureux et engageant, avec un soupçon de piquant et des emojis 🌶️ ou 🔥. Plutôt que de lister les interventions par utilisateur, tu mets l'accent sur les thèmes abordés et les points de vue partagés, en les intégrant dans un récit fluide. En fonction des conversations, tu soulignes les moments importants et suggères des pistes pour approfondir. Tu peux également inclure des liens vers des articles, posts ou outils échangés en markdown. La communauté Whatsapp s'appelle l'Hacienda et Carlos Diaz est le gringo en chef."""
-
-# Fonction pour récupérer les données dans la table "IA" pour une date donnée
-def get_ia_data_for_date(date_str):
-    response = supabase.table("IA").select("*").eq("Date", date_str).execute()
-    logging.debug("Données récupérées : %s", response.data)
-    return response.data
-
-# Définition de la fonction au format JSON pour le function calling
-function_definition = {
-    "name": "get_ia_data_for_date",
-    "description": "Récupérer les données d'IA de Supabase pour une date spécifique",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "date": {
-                "type": "string",
-                "description": "La date au format AAAA-MM-JJ (YYYY-MM-DD)"
-            }
-        },
-        "required": ["date"]
-    }
-}
-
-# Fonction de gestion de l'appel de fonction pour OpenAI
-def call_function_with_parameters(function_name, function_args_json):
-    function_args = json.loads(function_args_json)
-    if function_name == "get_ia_data_for_date":
-        date_str = function_args.get("date")
-        if date_str:
-            logging.info(f"Date fournie par l'IA : {date_str}")
-            function_response = get_ia_data_for_date(date_str)
-            # Convertir les données en une chaîne lisible
-            if not function_response:
-                return "Aucune information trouvée pour la date spécifiée."
-            data_str = json.dumps(function_response, ensure_ascii=False, indent=2)
-            return f"Voici les données pour la date {date_str} :\n{data_str}"
-        else:
-            return "Date non spécifiée."
-    return "Aucune fonction correspondante trouvée."
 
 # Fonction pour envoyer la requête à OpenAI avec streaming et function calling
 async def get_openai_response(conversation_history, msg):
@@ -105,7 +71,7 @@ async def get_openai_response(conversation_history, msg):
     completion = await openai.ChatCompletion.acreate(
         model="gpt-4o-mini-2024-07-18",  # Correction du nom du modèle
         messages=messages,
-        functions=[function_definition],
+        functions=[FUNCTION_DEFINITION],
         function_call="auto",
         stream=True,
         max_tokens=1500,  # Ajustement pour des réponses plus détaillées
@@ -134,7 +100,8 @@ async def get_openai_response(conversation_history, msg):
         logging.info(f"Appel de fonction détecté : {function_name}")
         logging.info(f"Arguments de la fonction : {function_args}")
 
-        function_response = call_function_with_parameters(function_name, function_args)
+        # Appeler la fonction depuis le module séparé
+        function_response = call_function_with_parameters(supabase, function_name, function_args)
 
         function_message = {"role": "function", "name": function_name, "content": function_response}
         conversation_history.append(function_message)
