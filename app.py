@@ -1,3 +1,5 @@
+# app.py
+
 import os
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -65,57 +67,67 @@ async def get_openai_response(conversation_history, msg):
     plotly_elements = []  # Liste pour stocker les éléments Plotly à afficher
 
     # Appel à OpenAI avec la définition de la fonction incluse
-    completion = await openai.ChatCompletion.acreate(
-        model="gpt-4o-mini-2024-07-18",  # Assurez-vous que le nom du modèle est correct
-        messages=messages,
-        functions=FUNCTION_DEFINITIONS,
-        function_call="auto",
-        stream=True,
-        max_tokens=1500,  # Ajustement pour des réponses plus détaillées
-        temperature=0.8   # Température pour ajuster la créativité
-    )
+    try:
+        completion = await openai.ChatCompletion.acreate(
+            model="gpt-4",  # Assurez-vous que le nom du modèle est correct
+            messages=messages,
+            functions=FUNCTION_DEFINITIONS,
+            function_call="auto",
+            stream=True,
+            max_tokens=1500,  # Ajustement pour des réponses plus détaillées
+            temperature=0.8   # Température pour ajuster la créativité
+        )
+    except Exception as e:
+        logging.error("Erreur lors de l'appel à OpenAI : %s", e)
+        return "🌶️ Une erreur s'est produite lors de l'appel à OpenAI."
 
-    async for part in completion:
-        delta = part.choices[0].delta
+    try:
+        async for part in completion:
+            delta = part.choices[0].delta
 
-        if hasattr(delta, 'content') and delta.content is not None:
-            token = delta.content
-            assistant_response += token
-            await msg.stream_token(token)
-        elif hasattr(delta, 'function_call') and delta.function_call is not None:
-            function_call = delta.function_call
-            function_name = function_call.get("name")
-            function_args = function_call.get("arguments", "")
-            
-            logging.info(f"Appel de fonction détecté : {function_name}")
-            logging.info(f"Arguments de la fonction : {function_args}")
+            if hasattr(delta, 'content') and delta.content is not None:
+                token = delta.content
+                assistant_response += token
+                await msg.stream_token(token)
+            elif hasattr(delta, 'function_call') and delta.function_call is not None:
+                function_call = delta.function_call
+                function_name = function_call.get("name")
+                function_args = function_call.get("arguments", "")
 
-            # Appeler la fonction depuis le module séparé
-            function_response = call_function_with_parameters(supabase, function_name, function_args)
+                logging.info(f"Appel de fonction détecté : {function_name}")
+                logging.info(f"Arguments de la fonction : {function_args}")
 
-            try:
-                response_json = json.loads(function_response)
-            except json.JSONDecodeError:
-                response_json = {"text": function_response}
+                # Appeler la fonction depuis le module séparé
+                function_response = call_function_with_parameters(supabase, function_name, function_args)
 
-            # Si la réponse inclut un graphique Plotly
-            if "plotly_figure" in response_json:
-                plotly_json = response_json.get("plotly_figure")
-                plotly_text = response_json.get("text", "")
                 try:
-                    plotly_fig = go.Figure.from_json(plotly_json)
-                    plotly_element = cl.Plotly(name=response_json.get("title", "Chart"), figure=plotly_fig, display="inline")
-                    plotly_elements.append((plotly_text, plotly_element))
-                except Exception as e:
-                    logging.error("Erreur lors de la reconstruction du graphique Plotly : %s", e)
-                    plotly_elements.append((plotly_text + "\nErreur lors de la génération du graphique.", None))
-            else:
-                plotly_elements.append((response_json.get("text", ""), None))
+                    response_json = json.loads(function_response)
+                except json.JSONDecodeError as e:
+                    logging.error("Erreur lors du parsing des arguments JSON : %s", e)
+                    response_json = {"text": "Erreur de format des données."}
 
-            # Ajouter le message de fonction à l'historique
-            function_message = {"role": "function", "name": function_name, "content": function_response}
-            conversation_history.append(function_message)
-            messages = [{"role": "system", "content": system_message}] + conversation_history
+                # Si la réponse inclut un graphique Plotly
+                if "plotly_figure" in response_json:
+                    plotly_json = response_json.get("plotly_figure")
+                    plotly_text = response_json.get("text", "")
+                    try:
+                        plotly_fig = go.Figure.from_json(plotly_json)
+                        plotly_element = cl.Plotly(name=response_json.get("title", "Chart"), figure=plotly_fig, display="inline")
+                        plotly_elements.append((plotly_text, plotly_element))
+                    except Exception as e:
+                        logging.error("Erreur lors de la reconstruction du graphique Plotly : %s", e)
+                        plotly_elements.append((plotly_text + "\nErreur lors de la génération du graphique.", None))
+                else:
+                    plotly_elements.append((response_json.get("text", ""), None))
+
+                # Ajouter le message de fonction à l'historique
+                function_message = {"role": "function", "name": function_name, "content": function_response}
+                conversation_history.append(function_message)
+                messages = [{"role": "system", "content": system_message}] + conversation_history
+
+    except Exception as e:
+        logging.error("Erreur lors de la lecture du flux de complétion : %s", e)
+        return "🌶️ Une erreur s'est produite lors du traitement de la réponse de l'IA."
 
     # Après avoir traité tous les appels de fonctions, générer la réponse finale
     assistant_message = {"role": "assistant", "content": assistant_response}
@@ -135,8 +147,11 @@ async def get_openai_response(conversation_history, msg):
                 await plot_msg.send()
 
     # Mettre à jour le message de chargement avec la réponse finale
-    msg.text = assistant_response  # Correction ici : utiliser 'text' au lieu de 'content'
-    await msg.update()
+    try:
+        msg.text = assistant_response  # Correction ici : utiliser 'text' au lieu de 'content'
+        await msg.update()
+    except Exception as e:
+        logging.error("Erreur lors de la mise à jour du message : %s", e)
 
     # Mettre à jour l'historique de conversation dans la session utilisateur
     cl.user_session.set('conversation_history', conversation_history)
@@ -176,8 +191,11 @@ async def main(message: cl.Message):
         response_text = "🌶️ Une erreur s'est produite lors du traitement de votre demande."
 
     # Mettre à jour le message de chargement avec la réponse finale
-    loader_msg.text = response_text  # Correction ici : utiliser 'text' au lieu de 'content'
-    await loader_msg.update()
+    try:
+        loader_msg.text = response_text  # Correction ici : utiliser 'text' au lieu de 'content'
+        await loader_msg.update()
+    except Exception as e:
+        logging.error("Erreur lors de la mise à jour du message de chargement : %s", e)
 
     # Mettre à jour l'historique de conversation dans la session utilisateur
     cl.user_session.set('conversation_history', conversation_history)
