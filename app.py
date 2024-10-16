@@ -210,7 +210,7 @@ async def main(message: cl.Message):
     cl.user_session.set('conversation_history', conversation_history)
 
     # Envoyer un message de chargement
-    loader_msg = cl.Message(content="🔄 Chargement en cours...")
+    loader_msg = cl.Message(content="")
     await loader_msg.send()
 
     try:
