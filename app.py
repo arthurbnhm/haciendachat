@@ -62,11 +62,7 @@ async def get_openai_response(conversation_history, msg):
     messages = [{"role": "system", "content": system_message}] + conversation_history
 
     assistant_response = ""
-    function_call = None
-    function_name = None
-    function_args = ""
-    plotly_element = None
-    plotly_text = ""
+    plotly_elements = []  # Liste pour stocker les éléments Plotly à afficher
 
     # Appel à OpenAI avec la définition de la fonction incluse
     completion = await openai.ChatCompletion.acreate(
@@ -87,93 +83,65 @@ async def get_openai_response(conversation_history, msg):
             assistant_response += token
             await msg.stream_token(token)
         elif hasattr(delta, 'function_call') and delta.function_call is not None:
-            if function_call is None:
-                function_call = delta.function_call
-                function_name = function_call.get("name")
-                function_args += function_call.get("arguments", "")
-            else:
-                function_args += delta.function_call.get("arguments", "")
-        else:
-            pass
+            function_call = delta.function_call
+            function_name = function_call.get("name")
+            function_args = function_call.get("arguments", "")
+            
+            logging.info(f"Appel de fonction détecté : {function_name}")
+            logging.info(f"Arguments de la fonction : {function_args}")
 
-    # Si une fonction est appelée, exécuter la fonction correspondante
-    if function_call:
-        logging.info(f"Appel de fonction détecté : {function_name}")
-        logging.info(f"Arguments de la fonction : {function_args}")
+            # Appeler la fonction depuis le module séparé
+            function_response = call_function_with_parameters(supabase, function_name, function_args)
 
-        # Appeler la fonction depuis le module séparé
-        function_response = call_function_with_parameters(supabase, function_name, function_args)
-
-        try:
-            response_json = json.loads(function_response)
-        except json.JSONDecodeError:
-            response_json = {"text": function_response}
-
-        # Si la réponse inclut un graphique Plotly
-        if "plotly_figure" in response_json:
-            plotly_json = response_json.get("plotly_figure")
-            plotly_text = response_json.get("text", "")
             try:
-                plotly_fig = go.Figure.from_json(plotly_json)
-                plotly_element = cl.Plotly(name=response_json.get("title", "Chart"), figure=plotly_fig, display="inline")
-            except Exception as e:
-                logging.error("Erreur lors de la reconstruction du graphique Plotly : %s", e)
-                plotly_text += "\nErreur lors de la génération du graphique."
-        else:
-            plotly_text = response_json.get("text", "")
+                response_json = json.loads(function_response)
+            except json.JSONDecodeError:
+                response_json = {"text": function_response}
 
-        # Ajouter le message de fonction à l'historique
-        function_message = {"role": "function", "name": function_name, "content": function_response}
-        conversation_history.append(function_message)
+            # Si la réponse inclut un graphique Plotly
+            if "plotly_figure" in response_json:
+                plotly_json = response_json.get("plotly_figure")
+                plotly_text = response_json.get("text", "")
+                try:
+                    plotly_fig = go.Figure.from_json(plotly_json)
+                    plotly_element = cl.Plotly(name=response_json.get("title", "Chart"), figure=plotly_fig, display="inline")
+                    plotly_elements.append((plotly_text, plotly_element))
+                except Exception as e:
+                    logging.error("Erreur lors de la reconstruction du graphique Plotly : %s", e)
+                    plotly_elements.append((plotly_text + "\nErreur lors de la génération du graphique.", None))
+            else:
+                plotly_elements.append((response_json.get("text", ""), None))
 
-        # Mettre à jour les messages avec le résultat de la fonction
-        messages = [{"role": "system", "content": system_message}] + conversation_history
+            # Ajouter le message de fonction à l'historique
+            function_message = {"role": "function", "name": function_name, "content": function_response}
+            conversation_history.append(function_message)
+            messages = [{"role": "system", "content": system_message}] + conversation_history
 
-        # Appel final pour donner la réponse à l'utilisateur
-        assistant_response = ""
+    # Après avoir traité tous les appels de fonctions, générer la réponse finale
+    assistant_message = {"role": "assistant", "content": assistant_response}
+    conversation_history.append(assistant_message)
 
-        completion = await openai.ChatCompletion.acreate(
-            model="gpt-4o-mini-2024-07-18",  # Assurez-vous que le nom du modèle est correct
-            messages=messages,
-            stream=True,
-            max_tokens=1500,  # Ajustement pour des réponses plus détaillées
-            temperature=0.8    # Température pour ajuster la créativité
-        )
+    logging.info("Réponse finale envoyée à l'utilisateur : %s", assistant_response)
 
-        async for part in completion:
-            delta = part.choices[0].delta
-            if hasattr(delta, 'content') and delta.content is not None:
-                token = delta.content
-                assistant_response += token
-                await msg.stream_token(token)
-
-        # Ajouter la réponse de l'assistant à l'historique
-        conversation_history.append({"role": "assistant", "content": assistant_response})
-
-        logging.info("Réponse finale envoyée à l'utilisateur : %s", assistant_response)
-
-        # Préparer et envoyer le graphique Plotly s'il est présent
+    # Envoyer les graphiques Plotly si présents
+    for text, plotly_element in plotly_elements:
         if plotly_element:
-            # Envoyer un nouveau message avec le graphique Plotly
-            plot_msg = cl.Message(content=plotly_text, elements=[plotly_element])
+            plot_msg = cl.Message(content=text, elements=[plotly_element])
             await plot_msg.send()
-        
-        # Mettre à jour le message de chargement avec la réponse finale
-        msg.content = assistant_response
-        await msg.update()
+        else:
+            # Envoyer uniquement le texte si le graphique n'a pas pu être généré
+            if text:
+                plot_msg = cl.Message(content=text)
+                await plot_msg.send()
 
-        # Mettre à jour l'historique de conversation dans la session utilisateur
-        cl.user_session.set('conversation_history', conversation_history)
+    # Mettre à jour le message de chargement avec la réponse finale
+    msg.text = assistant_response  # Correction ici : utiliser 'text' au lieu de 'content'
+    await msg.update()
 
-        return assistant_response
-    else:
-        conversation_history.append({"role": "assistant", "content": assistant_response})
+    # Mettre à jour l'historique de conversation dans la session utilisateur
+    cl.user_session.set('conversation_history', conversation_history)
 
-        logging.info("Réponse finale envoyée à l'utilisateur : %s", assistant_response)
-        await msg.update(content=assistant_response)
-        # Mettre à jour l'historique de conversation dans la session utilisateur
-        cl.user_session.set('conversation_history', conversation_history)
-        return assistant_response
+    return assistant_response
 
 # Définir la taille maximale de l'historique
 MAX_HISTORY_LENGTH = 10
@@ -208,7 +176,7 @@ async def main(message: cl.Message):
         response_text = "🌶️ Une erreur s'est produite lors du traitement de votre demande."
 
     # Mettre à jour le message de chargement avec la réponse finale
-    loader_msg.content = response_text
+    loader_msg.text = response_text  # Correction ici : utiliser 'text' au lieu de 'content'
     await loader_msg.update()
 
     # Mettre à jour l'historique de conversation dans la session utilisateur
