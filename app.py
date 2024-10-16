@@ -8,9 +8,10 @@ import datetime
 import logging
 from typing import Dict, Optional
 import starters
+import plotly.graph_objects as go  # Import nécessaire pour reconstruire les figures
 
-# Importer les fonctions du module tools
-from tools import FUNCTION_DEFINITION, call_function_with_parameters
+# Importer les définitions de fonctions et les gestionnaires depuis tools.py
+from tools import FUNCTION_DEFINITIONS, call_function_with_parameters
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -64,12 +65,14 @@ async def get_openai_response(conversation_history, msg):
     function_call = None
     function_name = None
     function_args = ""
+    plotly_element = None
+    plotly_text = ""
 
     # Appel à OpenAI avec la définition de la fonction incluse
     completion = await openai.ChatCompletion.acreate(
-        model="gpt-4o-mini-2024-07-18",  # Correction du nom du modèle
+        model="gpt-4o-mini-2024-07-18",  # Assurez-vous que le nom du modèle est correct
         messages=messages,
-        functions=[FUNCTION_DEFINITION],
+        functions=FUNCTION_DEFINITIONS,
         function_call="auto",
         stream=True,
         max_tokens=1500,  # Ajustement pour des réponses plus détaillées
@@ -101,6 +104,25 @@ async def get_openai_response(conversation_history, msg):
         # Appeler la fonction depuis le module séparé
         function_response = call_function_with_parameters(supabase, function_name, function_args)
 
+        try:
+            response_json = json.loads(function_response)
+        except json.JSONDecodeError:
+            response_json = {"text": function_response}
+
+        # Si la réponse inclut un graphique Plotly
+        if "plotly_figure" in response_json:
+            plotly_json = response_json.get("plotly_figure")
+            plotly_text = response_json.get("text", "")
+            try:
+                plotly_fig = go.Figure.from_json(plotly_json)
+                plotly_element = cl.Plotly(name=response_json.get("title", "Chart"), figure=plotly_fig, display="inline")
+            except Exception as e:
+                logging.error("Erreur lors de la reconstruction du graphique Plotly : %s", e)
+                plotly_text += "\nErreur lors de la génération du graphique."
+        else:
+            plotly_text = response_json.get("text", "")
+
+        # Ajouter le message de fonction à l'historique
         function_message = {"role": "function", "name": function_name, "content": function_response}
         conversation_history.append(function_message)
 
@@ -111,7 +133,7 @@ async def get_openai_response(conversation_history, msg):
         assistant_response = ""
 
         completion = await openai.ChatCompletion.acreate(
-            model="gpt-4o-mini-2024-07-18",  # Correction du nom du modèle
+            model="gpt-4o-mini-2024-07-18",  # Assurez-vous que le nom du modèle est correct
             messages=messages,
             stream=True,
             max_tokens=1500,  # Ajustement pour des réponses plus détaillées
@@ -125,14 +147,32 @@ async def get_openai_response(conversation_history, msg):
                 assistant_response += token
                 await msg.stream_token(token)
 
+        # Ajouter la réponse de l'assistant à l'historique
         conversation_history.append({"role": "assistant", "content": assistant_response})
 
         logging.info("Réponse finale envoyée à l'utilisateur : %s", assistant_response)
+
+        # Préparer et envoyer le graphique Plotly s'il est présent
+        if plotly_element:
+            # Envoyer un nouveau message avec le graphique Plotly
+            plot_msg = cl.Message(content=plotly_text, elements=[plotly_element])
+            await plot_msg.send()
+        
+        # Mettre à jour le message de chargement avec la réponse finale
+        msg.content = assistant_response
+        await msg.update()
+
+        # Mettre à jour l'historique de conversation dans la session utilisateur
+        cl.user_session.set('conversation_history', conversation_history)
+
         return assistant_response
     else:
         conversation_history.append({"role": "assistant", "content": assistant_response})
 
         logging.info("Réponse finale envoyée à l'utilisateur : %s", assistant_response)
+        await msg.update(content=assistant_response)
+        # Mettre à jour l'historique de conversation dans la session utilisateur
+        cl.user_session.set('conversation_history', conversation_history)
         return assistant_response
 
 # Définir la taille maximale de l'historique
