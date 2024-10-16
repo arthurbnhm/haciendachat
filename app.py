@@ -7,6 +7,7 @@ import json
 import datetime
 import logging
 from typing import Dict, Optional
+import starters
 
 # Charger les variables d'environnement
 load_dotenv()
