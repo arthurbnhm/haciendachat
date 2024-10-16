@@ -209,29 +209,9 @@ async def main(message: cl.Message):
     # Mettre à jour l'historique de conversation dans la session utilisateur
     cl.user_session.set('conversation_history', conversation_history)
 
-# Fonction de callback OAuth pour Google
+# Fonction de callback OAuth pour Google (sans gestion manuelle des utilisateurs)
 @cl.oauth_callback
 def oauth_callback(
     provider_id: str,
     token: str,
-    raw_user_data: Dict[str, str],
-    default_user: cl.User,
-) -> Optional[cl.User]:
-    if provider_id == "google":
-        # Récupérer les informations de l'utilisateur
-        email = raw_user_data.get("email")
-        name = raw_user_data.get("name")
-
-        # Vérifier si l'utilisateur existe déjà dans Supabase
-        response = supabase.table("users").select("*").eq("email", email).execute()
-        user_data = response.data
-
-        if not user_data:
-            # Créer un nouvel utilisateur
-            supabase.table("users").insert({"email": email, "name": name}).execute()
-            logging.info(f"Nouvel utilisateur créé : {email}")
-        else:
-            logging.info(f"Utilisateur existant : {email}")
-
-        return default_user
-    return None
+    raw_user_data: Dict
