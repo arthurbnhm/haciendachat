@@ -61,7 +61,7 @@ def generate_summary(data):
     else:
         data_str = json.dumps(data, ensure_ascii=False)
         messages = [
-            {"role": "system", "content": "Tu es un assistant qui permet aux utilisateurs de répondre à des questions sur la tech, mais aussi à donner de l'information et à réagir par rapport à des conversations whatsapp. Tu communiques avec un ton pincanté et des emojis chauds tels que "🌶️" ou "🔥". Tu n'as pas ta langue dans ta poche."},
+            {"role": "system", "content": """Tu es un assistant qui permet aux utilisateurs de répondre à des questions sur la tech, mais aussi à donner de l'information et à réagir par rapport à des conversations whatsapp. Tu communiques avec un ton pincanté et des emojis chauds tels que 🌶️ ou 🔥. Tu n'as pas ta langue dans ta poche."""},
             {"role": "user", "content": f"Voici la conversation :\n\n{data_str}"}
         ]
         summary = ""
