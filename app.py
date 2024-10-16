@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 import openai
 import chainlit as cl
+from aiocache import cached, Cache
 
 import starters  # Assurez-vous que ce module est nécessaire et correctement utilisé
 
@@ -61,28 +62,33 @@ current_day = current_date.day
 current_month = current_date.month
 current_year = current_date.year
 
-# Fonction pour récupérer les données dans la table "IA" pour une date donnée
-def get_ia_data_for_date(date_str: str):
-    response = supabase.table("IA").select("*").eq("Date", date_str).execute()
+# Fonction asynchrone pour récupérer les données dans la table "IA" pour une date donnée
+@cached(ttl=300, cache=Cache.MEMORY)
+async def get_ia_data_for_date(date_str: str):
+    response = await supabase.table("IA").select("column1, column2").eq("Date", date_str).execute()
     logging.debug("Données récupérées : %s", response.data)
     return response.data
 
 # Fonction pour générer un résumé détaillé des données
+@cached(ttl=600, cache=Cache.MEMORY)
 def generate_summary(data):
     if not data:
         return "Aucune information trouvée pour la période spécifiée."
     
-    data_str = json.dumps(data, ensure_ascii=False)
+    # Sélectionner uniquement les informations nécessaires
+    relevant_data = [{"important_field1": item["important_field1"], "important_field2": item["important_field2"]} for item in data]
+    data_str = json.dumps(relevant_data, ensure_ascii=False)
     messages = [
-        {"role": "system", "content": "Vous êtes un assistant qui résume des conversations."},
-        {"role": "user", "content": f"Veuillez fournir un résumé détaillé des conversations suivantes :\n\n{data_str}"}
+        {"role": "system", "content": "Vous êtes un assistant concis qui résume des conversations."},
+        {"role": "user", "content": f"Fournissez un résumé concis des conversations suivantes :\n\n{data_str}"}
     ]
     summary = ""
 
     completion = openai.ChatCompletion.create(
-        model="gpt-4o-mini-2024-07-18",
+        model="gpt-4o-mini-2024-07-18o-mini-2024-07-18",
         messages=messages,
-        stream=True
+        stream=True,
+        max_tokens=500
     )
 
     for part in completion:
@@ -99,7 +105,7 @@ def call_function_with_parameters(function_name: str, function_args_json: str):
         date_str = function_args.get("date")
         if date_str:
             logging.info(f"Date fournie par l'IA : {date_str}")
-            function_response = get_ia_data_for_date(date_str)
+            function_response = asyncio.run(get_ia_data_for_date(date_str))
             summary = generate_summary(function_response)
             return summary
         else:
@@ -122,7 +128,7 @@ async def get_openai_response(conversation_history, msg):
     function_args = ""
 
     completion = await openai.ChatCompletion.acreate(
-        model="gpt-4o-mini-2024-07-18",
+        model="gpt-4o-mini-2024-07-18o-mini-2024-07-18",
         messages=messages,
         functions=[
             {
@@ -180,7 +186,7 @@ async def get_openai_response(conversation_history, msg):
         messages = [{"role": "system", "content": system_message}] + conversation_history
 
         completion = await openai.ChatCompletion.acreate(
-            model="gpt-4o-mini-2024-07-18",
+            model="gpt-4o-mini-2024-07-18o-mini-2024-07-18",
             messages=messages,
             stream=True
         )
@@ -203,9 +209,6 @@ async def get_openai_response(conversation_history, msg):
 
         logging.info("Réponse finale envoyée à l'utilisateur : %s", assistant_response)
         return assistant_response
-
-# Définir la taille maximale de l'historique
-MAX_HISTORY_LENGTH = 10
 
 # Gestion des messages dans Chainlit
 @cl.on_message
