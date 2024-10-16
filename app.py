@@ -23,7 +23,6 @@ OAUTH_GOOGLE_CLIENT_ID = os.getenv("OAUTH_GOOGLE_CLIENT_ID")
 CHAINLIT_AUTH_SECRET = os.getenv("CHAINLIT_AUTH_SECRET")
 OAUTH_GOOGLE_CLIENT_SECRET = os.getenv("OAUTH_GOOGLE_CLIENT_SECRET")
 CHAINLIT_URL = os.getenv("CHAINLIT_URL")
-PORT = os.getenv("PORT")  # Ne pas définir de valeur par défaut ici
 
 # Vérifier que toutes les variables d'environnement requises sont définies, sauf PORT
 missing_env_vars = []
@@ -39,15 +38,6 @@ for var in required_vars:
 
 if missing_env_vars:
     raise ValueError(f"Les variables d'environnement suivantes sont manquantes : {', '.join(missing_env_vars)}")
-
-if not PORT:
-    raise ValueError("La variable d'environnement PORT est requise.")
-
-# Convertir PORT en entier
-try:
-    PORT = int(PORT)
-except ValueError:
-    raise ValueError("La variable d'environnement PORT doit être un entier valide.")
 
 # Configurer le logger avec le niveau DEBUG
 logging.basicConfig(level=logging.DEBUG)
@@ -266,10 +256,3 @@ def oauth_callback(
 
         return default_user
     return None
-
-# Lancer Chainlit en utilisant le port et l'hôte appropriés
-if __name__ == "__main__":
-    cl.run(
-        port=PORT,
-        host="0.0.0.0"
-    )
