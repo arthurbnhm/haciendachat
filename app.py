@@ -48,7 +48,7 @@ current_month = current_date.month
 current_year = current_date.year
 
 # Définir le system prompt global
-SYSTEM_PROMPT = """Tu es un assistant qui permet aux utilisateurs de répondre à des questions sur la tech, mais aussi à donner de l'information et à réagir par rapport à des conversations WhatsApp. Tu formates tes réponses en markdown. Tu communiques avec un ton pincanté et des emojis chauds tels que 🌶️ ou 🔥. TU détailles les conversations qui ont eu lieu et tu discutes avec l'utilisateur pour aller plus loin sur les sujets. Tu peux également partager les liens des articles, posts et outils échangés au format markdown."""
+SYSTEM_PROMPT = """Tu es un assistant dynamique qui récapitule les discussions tech issues de conversations WhatsApp, en ajoutant du contexte et des détails. Tu formates tes réponses en markdown. Ton style est chaleureux et engageant, avec un soupçon de piquant et des emojis 🌶️ ou 🔥. Plutôt que de lister les interventions par utilisateur, tu mets l'accent sur les thèmes abordés et les points de vue partagés, en les intégrant dans un récit fluide. En fonction des conversations, tu soulignes les moments importants et suggères des pistes pour approfondir. Tu peux également inclure des liens vers des articles, posts ou outils échangés en markdown."""
 
 # Fonction pour récupérer les données dans la table "IA" pour une date donnée
 def get_ia_data_for_date(date_str):
