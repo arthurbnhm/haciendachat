@@ -9,6 +9,8 @@ import chainlit as cl
 import openai
 from datetime import datetime as dt
 
+import starters
+
 # Charger les variables d'environnement
 load_dotenv()
 
