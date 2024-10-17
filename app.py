@@ -116,14 +116,16 @@ def get_ia_data_between_dates(start_date_str: str, end_date_str: str) -> List[Di
     logging.debug("Données récupérées entre %s et %s : %s", start_date_str, end_date_str, response.data)
     return response.data
 
-# Fonction pour vérifier si un utilisateur existe dans Supabase
-def user_exists(email: str) -> bool:
-    response = supabase.table("users").select("*").eq("email", email).execute()
-    return bool(response.data)
+# Fonction pour vérifier si un utilisateur existe dans Supabase et récupérer son accès
+def get_user_access(email: str) -> Optional[bool]:
+    response = supabase.table("users").select("access").eq("email", email).execute()
+    if response.data and len(response.data) > 0:
+        return response.data[0].get("access", False)
+    return None
 
 # Fonction pour créer un nouvel utilisateur dans Supabase
 def create_user(email: str, name: str):
-    supabase.table("users").insert({"email": email, "name": name}).execute()
+    supabase.table("users").insert({"email": email, "name": name, "access": False}).execute()  # Par défaut, accès restreint
     logging.info(f"Nouvel utilisateur créé : {email}")
 
 # Fonction de gestion de l'appel de fonction pour OpenAI
@@ -169,7 +171,7 @@ async def get_openai_response(conversation_history: List[Dict], msg: cl.Message)
 
     # Appel à OpenAI avec toutes les définitions de fonctions incluses
     completion = await openai.ChatCompletion.acreate(
-        model="gpt-4o",  # Assurez-vous d'utiliser le modèle correct
+        model="gpt-4",  # Assurez-vous d'utiliser le modèle correct
         messages=messages,
         functions=function_definitions,
         function_call="auto",
@@ -212,7 +214,7 @@ async def get_openai_response(conversation_history: List[Dict], msg: cl.Message)
         assistant_response = ""
 
         completion = await openai.ChatCompletion.acreate(
-            model="gpt-4o",  # Assurez-vous d'utiliser le modèle correct
+            model="gpt-4",  # Assurez-vous d'utiliser le modèle correct
             messages=messages,
             stream=True,
             max_tokens=10000,
@@ -234,7 +236,7 @@ async def get_openai_response(conversation_history: List[Dict], msg: cl.Message)
         logging.info("Réponse finale envoyée à l'utilisateur : %s", assistant_response)
         return assistant_response
 
-# Fonction de callback OAuth pour Google
+# Fonction de callback OAuth pour Google avec vérification de l'accès
 @cl.oauth_callback
 def oauth_callback(
     provider_id: str,
@@ -249,18 +251,38 @@ def oauth_callback(
         if email and name:
             if not user_exists(email):
                 create_user(email, name)
+                access = False  # Par défaut, accès restreint pour les nouveaux utilisateurs
             else:
-                logging.info(f"Utilisateur existant : {email}")
-            return default_user
+                access = get_user_access(email)
+                logging.info(f"Utilisateur existant : {email} avec accès : {access}")
+            
+            # Stocker l'état d'accès dans la session utilisateur
+            cl.user_session.set('user_access', access)
+            
+            if access:
+                return default_user
+            else:
+                # Informer l'utilisateur que son accès est restreint
+                cl.Message(content="⚠️ Votre accès est limité. Vous ne pouvez pas envoyer de messages.").send()
+                return default_user
         else:
             logging.warning("Données utilisateur incomplètes reçues.")
             return None
     return None
 
-# Gestion des messages dans Chainlit avec ajout du loader
+# Gestion des messages dans Chainlit avec vérification de l'accès
 @cl.on_message
 async def handle_message(message: cl.Message):
     user_message = message.content
+
+    # Récupérer l'état d'accès de la session utilisateur
+    user_access = cl.user_session.get('user_access', False)
+
+    if not user_access:
+        # Informer l'utilisateur que son accès est limité
+        error_msg = cl.Message(content="❌ Vous n'avez pas les permissions nécessaires pour envoyer des messages.")
+        await error_msg.send()
+        return  # Ne pas traiter le message
 
     # Initialiser ou récupérer l'historique de conversation
     conversation_history = cl.user_session.get('conversation_history', [])
