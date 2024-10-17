@@ -9,8 +9,6 @@ import chainlit as cl
 import openai
 from datetime import datetime as dt
 
-import starters
-
 # Charger les variables d'environnement
 load_dotenv()
 
@@ -261,15 +259,17 @@ def oauth_callback(
                 access = get_user_access(email)
                 logging.info(f"Utilisateur existant : {email} avec accès : {access}")
             
-            # Ajouter 'access' en tant qu'attribut personnalisé dans l'objet User si possible
-            # Note: Cela dépend de la capacité de Chainlit à gérer des attributs personnalisés
-            # Si ce n'est pas possible, nous allons gérer l'accès dans le gestionnaire de messages
-
-            return default_user
+            if access:
+                return default_user
+            else:
+                # Informer l'utilisateur que son accès est restreint
+                # Chainlit ne permet pas d'envoyer un message directement ici
+                logging.warning(f"Accès refusé pour l'utilisateur : {email}")
+                return None  # Refuser la connexion
         else:
             logging.warning("Données utilisateur incomplètes reçues.")
-            return None
-    return None
+            return None  # Refuser la connexion si les données sont incomplètes
+    return None  # Refuser la connexion si le fournisseur n'est pas Google
 
 # Gestion des messages dans Chainlit avec vérification de l'accès
 @cl.on_message
