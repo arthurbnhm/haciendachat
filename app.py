@@ -1,6 +1,7 @@
- import os
+import os
 import json
 import logging
+import datetime
 from typing import Dict, Optional, List
 
 from supabase import create_client, Client
@@ -8,6 +9,8 @@ from dotenv import load_dotenv
 import chainlit as cl
 import openai
 from datetime import datetime as dt
+
+import starters
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -115,40 +118,13 @@ def get_ia_data_between_dates(start_date_str: str, end_date_str: str) -> List[Di
 
 # Fonction pour vérifier si un utilisateur existe dans Supabase
 def user_exists(email: str) -> bool:
-    response = supabase.table("users").select("email").eq("email", email).execute()
+    response = supabase.table("users").select("*").eq("email", email).execute()
     return bool(response.data)
-
-# Fonction pour récupérer le champ "access" d'un utilisateur
-def get_user_access(email: str) -> Optional[bool]:
-    response = supabase.table("users").select("access").eq("email", email).execute()
-    if response.data and len(response.data) > 0:
-        return response.data[0].get("access", False)
-    return None
 
 # Fonction pour créer un nouvel utilisateur dans Supabase
 def create_user(email: str, name: str):
-    supabase.table("users").insert({"email": email, "name": name, "access": False}).execute()  # Par défaut, accès restreint
+    supabase.table("users").insert({"email": email, "name": name}).execute()
     logging.info(f"Nouvel utilisateur créé : {email}")
-
-# Fonction pour enregistrer un message dans la table "conversations"
-def save_conversation(user_email: str, role: str, content: str):
-    supabase.table("conversations").insert({
-        "user_email": user_email,
-        "role": role,
-        "content": content,
-        "timestamp": dt.utcnow()
-    }).execute()
-    logging.debug(f"Message enregistré pour {user_email}: [{role}] {content}")
-
-# Fonction pour récupérer l'historique des conversations d'un utilisateur
-def get_conversation_history(user_email: str, limit: int = MAX_HISTORY_LENGTH) -> List[Dict]:
-    response = supabase.table("conversations") \
-                       .select("*") \
-                       .eq("user_email", user_email) \
-                       .order("timestamp", desc=False) \
-                       .limit(limit) \
-                       .execute()
-    return response.data if response.data else []
 
 # Fonction de gestion de l'appel de fonction pour OpenAI
 def call_function_with_parameters(function_name: str, function_args_json: str) -> str:
@@ -193,7 +169,7 @@ async def get_openai_response(conversation_history: List[Dict], msg: cl.Message)
 
     # Appel à OpenAI avec toutes les définitions de fonctions incluses
     completion = await openai.ChatCompletion.acreate(
-        model="gpt-4",  # Assurez-vous d'utiliser le modèle correct
+        model="gpt-4o",  # Assurez-vous d'utiliser le modèle correct
         messages=messages,
         functions=function_definitions,
         function_call="auto",
@@ -236,7 +212,7 @@ async def get_openai_response(conversation_history: List[Dict], msg: cl.Message)
         assistant_response = ""
 
         completion = await openai.ChatCompletion.acreate(
-            model="gpt-4",  # Assurez-vous d'utiliser le modèle correct
+            model="gpt-4o",  # Assurez-vous d'utiliser le modèle correct
             messages=messages,
             stream=True,
             max_tokens=10000,
@@ -258,7 +234,7 @@ async def get_openai_response(conversation_history: List[Dict], msg: cl.Message)
         logging.info("Réponse finale envoyée à l'utilisateur : %s", assistant_response)
         return assistant_response
 
-# Fonction de callback OAuth pour Google sans utiliser cl.user_session
+# Fonction de callback OAuth pour Google
 @cl.oauth_callback
 def oauth_callback(
     provider_id: str,
@@ -273,79 +249,28 @@ def oauth_callback(
         if email and name:
             if not user_exists(email):
                 create_user(email, name)
-                access = False  # Par défaut, accès restreint pour les nouveaux utilisateurs
-                logging.info(f"Nouvel utilisateur créé : {email} avec accès : {access}")
             else:
-                access = get_user_access(email)
-                logging.info(f"Utilisateur existant : {email} avec accès : {access}")
-            
-            if access:
-                return default_user
-            else:
-                # Informer l'utilisateur que son accès est restreint
-                # Chainlit ne permet pas d'envoyer un message directement ici
-                logging.warning(f"Accès refusé pour l'utilisateur : {email}")
-                return None  # Refuser la connexion
+                logging.info(f"Utilisateur existant : {email}")
+            return default_user
         else:
             logging.warning("Données utilisateur incomplètes reçues.")
-            return None  # Refuser la connexion si les données sont incomplètes
-    return None  # Refuser la connexion si le fournisseur n'est pas Google
+            return None
+    return None
 
-# Fonction de callback lors de la connexion pour charger l'historique
-@cl.on_connect
-async def on_connect():
-    current_user: cl.User = cl.user
-    if current_user and current_user.email:
-        user_email = current_user.email
-        conversation_history = get_conversation_history(user_email)
-        conversation_history_dict = [{"role": entry["role"], "content": entry["content"]} for entry in conversation_history]
-
-        # Limiter la taille de l'historique
-        if len(conversation_history_dict) > MAX_HISTORY_LENGTH:
-            conversation_history_dict = conversation_history_dict[-MAX_HISTORY_LENGTH:]
-
-        # Stocker l'historique dans la session utilisateur
-        cl.user_session.set('conversation_history', conversation_history_dict)
-        logging.info(f"Historique de conversation chargé pour {user_email}")
-
-# Gestion des messages dans Chainlit avec vérification de l'accès
+# Gestion des messages dans Chainlit avec ajout du loader
 @cl.on_message
 async def handle_message(message: cl.Message):
     user_message = message.content
 
-    # Récupérer l'utilisateur actuel
-    current_user: cl.User = cl.user
-    if not current_user or not current_user.email:
-        # Informer l'utilisateur qu'il n'est pas authentifié
-        error_msg = cl.Message(content="❌ Vous devez être connecté pour envoyer des messages.")
-        await error_msg.send()
-        return
-
-    user_email = current_user.email
-
-    # Récupérer le statut d'accès de l'utilisateur depuis Supabase
-    access = get_user_access(user_email)
-    logging.info(f"Utilisateur {user_email} avec accès : {access}")
-
-    if not access:
-        # Informer l'utilisateur que son accès est limité
-        error_msg = cl.Message(content="❌ Vous n'avez pas les permissions nécessaires pour envoyer des messages.")
-        await error_msg.send()
-        return  # Ne pas traiter le message
-
-    # Enregistrer le message de l'utilisateur dans la base de données
-    save_conversation(user_email, "user", user_message)
-
-    # Récupérer l'historique de conversation depuis la base de données
-    conversation_history = get_conversation_history(user_email)
-    conversation_history_dict = [{"role": entry["role"], "content": entry["content"]} for entry in conversation_history]
+    # Initialiser ou récupérer l'historique de conversation
+    conversation_history = cl.user_session.get('conversation_history', [])
+    conversation_history.append({"role": "user", "content": user_message})
 
     # Limiter la taille de l'historique
-    if len(conversation_history_dict) > MAX_HISTORY_LENGTH:
-        conversation_history_dict = conversation_history_dict[-MAX_HISTORY_LENGTH:]
+    if len(conversation_history) > MAX_HISTORY_LENGTH:
+        conversation_history = conversation_history[-MAX_HISTORY_LENGTH:]
 
-    # Stocker l'historique dans la session utilisateur
-    cl.user_session.set('conversation_history', conversation_history_dict)
+    cl.user_session.set('conversation_history', conversation_history)
 
     # Envoyer un message de chargement
     loader_msg = cl.Message(content="Laisse moi ajouter un peu de 🌶️")
@@ -353,14 +278,14 @@ async def handle_message(message: cl.Message):
 
     try:
         # Obtenir la réponse de l'IA et streamer les tokens
-        response_text = await get_openai_response(conversation_history_dict, loader_msg)
+        response_text = await get_openai_response(conversation_history, loader_msg)
     except Exception as e:
         logging.error("Erreur lors de l'obtention de la réponse : %s", e)
         response_text = "🌶️ Une erreur s'est produite lors du traitement de votre demande."
 
-    # Enregistrer la réponse de l'assistant dans la base de données
-    save_conversation(user_email, "assistant", response_text)
-
     # Mettre à jour le message de chargement avec la réponse finale
     loader_msg.content = response_text
     await loader_msg.update()
+
+    # Mettre à jour l'historique de conversation dans la session utilisateur
+    cl.user_session.set('conversation_history', conversation_history)
