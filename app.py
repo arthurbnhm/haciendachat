@@ -1,7 +1,6 @@
 import os
 import json
 import logging
-import datetime
 from typing import Dict, Optional, List
 
 from supabase import create_client, Client
@@ -9,8 +8,6 @@ from dotenv import load_dotenv
 import chainlit as cl
 import openai
 from datetime import datetime as dt
-
-import starters
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -116,7 +113,12 @@ def get_ia_data_between_dates(start_date_str: str, end_date_str: str) -> List[Di
     logging.debug("Données récupérées entre %s et %s : %s", start_date_str, end_date_str, response.data)
     return response.data
 
-# Fonction pour vérifier si un utilisateur existe dans Supabase et récupérer son accès
+# Fonction pour vérifier si un utilisateur existe dans Supabase
+def user_exists(email: str) -> bool:
+    response = supabase.table("users").select("email").eq("email", email).execute()
+    return bool(response.data)
+
+# Fonction pour récupérer le champ "access" d'un utilisateur
 def get_user_access(email: str) -> Optional[bool]:
     response = supabase.table("users").select("access").eq("email", email).execute()
     if response.data and len(response.data) > 0:
@@ -252,6 +254,7 @@ def oauth_callback(
             if not user_exists(email):
                 create_user(email, name)
                 access = False  # Par défaut, accès restreint pour les nouveaux utilisateurs
+                logging.info(f"Nouvel utilisateur créé : {email} avec accès : {access}")
             else:
                 access = get_user_access(email)
                 logging.info(f"Utilisateur existant : {email} avec accès : {access}")
@@ -263,7 +266,9 @@ def oauth_callback(
                 return default_user
             else:
                 # Informer l'utilisateur que son accès est restreint
-                cl.Message(content="⚠️ Votre accès est limité. Vous ne pouvez pas envoyer de messages.").send()
+                warning_msg = cl.Message(content="⚠️ Votre accès est limité. Vous ne pouvez pas envoyer de messages.")
+                cl.user_session.set('warning_sent', True)  # Pour éviter d'envoyer plusieurs fois le message
+                cl.run_async(warning_msg.send())
                 return default_user
         else:
             logging.warning("Données utilisateur incomplètes reçues.")
