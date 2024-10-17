@@ -1,4 +1,4 @@
-import os
+ import os
 import json
 import logging
 from typing import Dict, Optional, List
@@ -129,6 +129,26 @@ def get_user_access(email: str) -> Optional[bool]:
 def create_user(email: str, name: str):
     supabase.table("users").insert({"email": email, "name": name, "access": False}).execute()  # Par défaut, accès restreint
     logging.info(f"Nouvel utilisateur créé : {email}")
+
+# Fonction pour enregistrer un message dans la table "conversations"
+def save_conversation(user_email: str, role: str, content: str):
+    supabase.table("conversations").insert({
+        "user_email": user_email,
+        "role": role,
+        "content": content,
+        "timestamp": dt.utcnow()
+    }).execute()
+    logging.debug(f"Message enregistré pour {user_email}: [{role}] {content}")
+
+# Fonction pour récupérer l'historique des conversations d'un utilisateur
+def get_conversation_history(user_email: str, limit: int = MAX_HISTORY_LENGTH) -> List[Dict]:
+    response = supabase.table("conversations") \
+                       .select("*") \
+                       .eq("user_email", user_email) \
+                       .order("timestamp", desc=False) \
+                       .limit(limit) \
+                       .execute()
+    return response.data if response.data else []
 
 # Fonction de gestion de l'appel de fonction pour OpenAI
 def call_function_with_parameters(function_name: str, function_args_json: str) -> str:
@@ -271,6 +291,23 @@ def oauth_callback(
             return None  # Refuser la connexion si les données sont incomplètes
     return None  # Refuser la connexion si le fournisseur n'est pas Google
 
+# Fonction de callback lors de la connexion pour charger l'historique
+@cl.on_connect
+async def on_connect():
+    current_user: cl.User = cl.user
+    if current_user and current_user.email:
+        user_email = current_user.email
+        conversation_history = get_conversation_history(user_email)
+        conversation_history_dict = [{"role": entry["role"], "content": entry["content"]} for entry in conversation_history]
+
+        # Limiter la taille de l'historique
+        if len(conversation_history_dict) > MAX_HISTORY_LENGTH:
+            conversation_history_dict = conversation_history_dict[-MAX_HISTORY_LENGTH:]
+
+        # Stocker l'historique dans la session utilisateur
+        cl.user_session.set('conversation_history', conversation_history_dict)
+        logging.info(f"Historique de conversation chargé pour {user_email}")
+
 # Gestion des messages dans Chainlit avec vérification de l'accès
 @cl.on_message
 async def handle_message(message: cl.Message):
@@ -296,15 +333,19 @@ async def handle_message(message: cl.Message):
         await error_msg.send()
         return  # Ne pas traiter le message
 
-    # Initialiser ou récupérer l'historique de conversation
-    conversation_history = cl.user_session.get('conversation_history', [])
-    conversation_history.append({"role": "user", "content": user_message})
+    # Enregistrer le message de l'utilisateur dans la base de données
+    save_conversation(user_email, "user", user_message)
+
+    # Récupérer l'historique de conversation depuis la base de données
+    conversation_history = get_conversation_history(user_email)
+    conversation_history_dict = [{"role": entry["role"], "content": entry["content"]} for entry in conversation_history]
 
     # Limiter la taille de l'historique
-    if len(conversation_history) > MAX_HISTORY_LENGTH:
-        conversation_history = conversation_history[-MAX_HISTORY_LENGTH:]
+    if len(conversation_history_dict) > MAX_HISTORY_LENGTH:
+        conversation_history_dict = conversation_history_dict[-MAX_HISTORY_LENGTH:]
 
-    cl.user_session.set('conversation_history', conversation_history)
+    # Stocker l'historique dans la session utilisateur
+    cl.user_session.set('conversation_history', conversation_history_dict)
 
     # Envoyer un message de chargement
     loader_msg = cl.Message(content="Laisse moi ajouter un peu de 🌶️")
@@ -312,14 +353,14 @@ async def handle_message(message: cl.Message):
 
     try:
         # Obtenir la réponse de l'IA et streamer les tokens
-        response_text = await get_openai_response(conversation_history, loader_msg)
+        response_text = await get_openai_response(conversation_history_dict, loader_msg)
     except Exception as e:
         logging.error("Erreur lors de l'obtention de la réponse : %s", e)
         response_text = "🌶️ Une erreur s'est produite lors du traitement de votre demande."
 
+    # Enregistrer la réponse de l'assistant dans la base de données
+    save_conversation(user_email, "assistant", response_text)
+
     # Mettre à jour le message de chargement avec la réponse finale
     loader_msg.content = response_text
     await loader_msg.update()
-
-    # Mettre à jour l'historique de conversation dans la session utilisateur
-    cl.user_session.set('conversation_history', conversation_history)
