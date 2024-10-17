@@ -169,7 +169,7 @@ async def get_openai_response(conversation_history: List[Dict], msg: cl.Message)
 
     # Appel à OpenAI avec toutes les définitions de fonctions incluses
     completion = await openai.ChatCompletion.acreate(
-        model="GPT-4o",  # Assurez-vous d'utiliser le modèle correct
+        model="gpt-4o",  # Assurez-vous d'utiliser le modèle correct
         messages=messages,
         functions=function_definitions,
         function_call="auto",
@@ -212,7 +212,7 @@ async def get_openai_response(conversation_history: List[Dict], msg: cl.Message)
         assistant_response = ""
 
         completion = await openai.ChatCompletion.acreate(
-            model="GPT-4o",  # Assurez-vous d'utiliser le modèle correct
+            model="gpt-4o",  # Assurez-vous d'utiliser le modèle correct
             messages=messages,
             stream=True,
             max_tokens=10000,
