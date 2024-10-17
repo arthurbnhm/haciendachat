@@ -173,7 +173,7 @@ async def get_openai_response(conversation_history: List[Dict], msg: cl.Message)
         functions=function_definitions,
         function_call="auto",
         stream=True,
-        max_tokens=3000,
+        max_tokens=10000,
         temperature=0.8
     )
 
@@ -214,7 +214,7 @@ async def get_openai_response(conversation_history: List[Dict], msg: cl.Message)
             model="gpt-4o-mini-2024-07-18",  # Assurez-vous d'utiliser le modèle correct
             messages=messages,
             stream=True,
-            max_tokens=3000,
+            max_tokens=10000,
             temperature=0.8
         )
 
