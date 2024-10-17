@@ -238,7 +238,7 @@ async def get_openai_response(conversation_history: List[Dict], msg: cl.Message)
         logging.info("Réponse finale envoyée à l'utilisateur : %s", assistant_response)
         return assistant_response
 
-# Fonction de callback OAuth pour Google avec vérification de l'accès
+# Fonction de callback OAuth pour Google sans utiliser cl.user_session
 @cl.oauth_callback
 def oauth_callback(
     provider_id: str,
@@ -259,17 +259,11 @@ def oauth_callback(
                 access = get_user_access(email)
                 logging.info(f"Utilisateur existant : {email} avec accès : {access}")
             
-            # Stocker l'état d'accès dans la session utilisateur
-            cl.user_session.set('user_access', access)
-            
-            if access:
-                return default_user
-            else:
-                # Informer l'utilisateur que son accès est restreint
-                warning_msg = cl.Message(content="⚠️ Votre accès est limité. Vous ne pouvez pas envoyer de messages.")
-                cl.user_session.set('warning_sent', True)  # Pour éviter d'envoyer plusieurs fois le message
-                cl.run_async(warning_msg.send())
-                return default_user
+            # Ajouter 'access' en tant qu'attribut personnalisé dans l'objet User si possible
+            # Note: Cela dépend de la capacité de Chainlit à gérer des attributs personnalisés
+            # Si ce n'est pas possible, nous allons gérer l'accès dans le gestionnaire de messages
+
+            return default_user
         else:
             logging.warning("Données utilisateur incomplètes reçues.")
             return None
@@ -280,10 +274,21 @@ def oauth_callback(
 async def handle_message(message: cl.Message):
     user_message = message.content
 
-    # Récupérer l'état d'accès de la session utilisateur
-    user_access = cl.user_session.get('user_access', False)
+    # Récupérer l'utilisateur actuel
+    current_user: cl.User = cl.user
+    if not current_user or not current_user.email:
+        # Informer l'utilisateur qu'il n'est pas authentifié
+        error_msg = cl.Message(content="❌ Vous devez être connecté pour envoyer des messages.")
+        await error_msg.send()
+        return
 
-    if not user_access:
+    user_email = current_user.email
+
+    # Récupérer le statut d'accès de l'utilisateur depuis Supabase
+    access = get_user_access(user_email)
+    logging.info(f"Utilisateur {user_email} avec accès : {access}")
+
+    if not access:
         # Informer l'utilisateur que son accès est limité
         error_msg = cl.Message(content="❌ Vous n'avez pas les permissions nécessaires pour envoyer des messages.")
         await error_msg.send()
