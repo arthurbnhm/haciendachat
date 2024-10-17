@@ -1,18 +1,22 @@
 import os
+import json
+import logging
+import datetime
+from typing import Dict, Optional, List
+
 from supabase import create_client, Client
 from dotenv import load_dotenv
 import chainlit as cl
 import openai
-import json
-import datetime
-import logging
-from typing import Dict, Optional
-import starters
+from datetime import datetime as dt
 
 # Charger les variables d'environnement
 load_dotenv()
 
-# Configuration de Supabase, OpenAI et Chainlit
+# Configuration de logging
+logging.basicConfig(level=logging.DEBUG)
+
+# Configuration des variables d'environnement
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -22,46 +26,36 @@ OAUTH_GOOGLE_CLIENT_SECRET = os.getenv("OAUTH_GOOGLE_CLIENT_SECRET")
 CHAINLIT_URL = os.getenv("CHAINLIT_URL")
 
 # Vérifier que toutes les variables d'environnement requises sont définies
-missing_env_vars = []
-required_vars = [
-    "SUPABASE_URL", "SUPABASE_KEY", "OPENAI_API_KEY",
-    "OAUTH_GOOGLE_CLIENT_ID", "OAUTH_GOOGLE_CLIENT_SECRET",
-    "CHAINLIT_URL", "CHAINLIT_AUTH_SECRET"
-]
-for var in required_vars:
-    if not os.getenv(var):
-        missing_env_vars.append(var)
+def validate_env_vars():
+    required_vars = [
+        "SUPABASE_URL", "SUPABASE_KEY", "OPENAI_API_KEY",
+        "OAUTH_GOOGLE_CLIENT_ID", "OAUTH_GOOGLE_CLIENT_SECRET",
+        "CHAINLIT_URL", "CHAINLIT_AUTH_SECRET"
+    ]
+    missing = [var for var in required_vars if not os.getenv(var)]
+    if missing:
+        raise ValueError(f"Les variables d'environnement suivantes sont manquantes : {', '.join(missing)}")
 
-if missing_env_vars:
-    raise ValueError(f"Les variables d'environnement suivantes sont manquantes : {', '.join(missing_env_vars)}")
-
-# Configurer le logger avec le niveau DEBUG
-logging.basicConfig(level=logging.DEBUG)
+validate_env_vars()
 
 # Initialiser les clients Supabase et OpenAI
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 openai.api_key = OPENAI_API_KEY
+logging.debug("Clients Supabase et OpenAI initialisés.")
 
-# Obtenir la date actuelle
-current_date = datetime.datetime.now()
-current_day = current_date.day
-current_month = current_date.month
-current_year = current_date.year
+# Définir le system prompt global
+SYSTEM_PROMPT = (
+    "Tu es un assistant dynamique, très pincanté qui récapitule les discussions tech issues de conversations WhatsApp, "
+    "en ajoutant du contexte et des détails. Tu formates tes réponses en markdown. Ton style est chaleureux et engageant, "
+    "avec un soupçon de piquant et des emojis 🌶️ ou 🔥. Plutôt que de lister les interventions par utilisateur, tu mets "
+    "l'accent sur les thèmes abordés et les points de vue partagés, en les intégrant dans un récit fluide. En fonction des "
+    "conversations, tu soulignes les moments importants et suggères des pistes pour approfondir. Tu peux également inclure "
+    "des liens vers des articles, posts ou outils échangés en markdown. La communauté Whatsapp s'appelle l'Hacienda et "
+    "Carlos Diaz est le gringo en chef. Tu peux filtrer les discussions par date ou par plage de dates selon les demandes des utilisateurs."
+)
 
-# Définir le system prompt global (mis à jour pour inclure la nouvelle fonctionnalité)
-SYSTEM_PROMPT = """Tu es un assistant dynamique, très pincanté qui récapitule les discussions tech issues de conversations WhatsApp, en ajoutant du contexte et des détails. Tu formates tes réponses en markdown. Ton style est chaleureux et engageant, avec un soupçon de piquant et des emojis 🌶️ ou 🔥. Plutôt que de lister les interventions par utilisateur, tu mets l'accent sur les thèmes abordés et les points de vue partagés, en les intégrant dans un récit fluide. En fonction des conversations, tu soulignes les moments importants et suggères des pistes pour approfondir. Tu peux également inclure des liens vers des articles, posts ou outils échangés en markdown. La communauté Whatsapp s'appelle l'Hacienda et Carlos Diaz est le gringo en chef. Tu peux filtrer les discussions par date ou par plage de dates selon les demandes des utilisateurs."""
-
-# Fonction pour récupérer les données dans la table "IA" pour une date donnée
-def get_ia_data_for_date(date_str):
-    response = supabase.table("IA").select("*").eq("Date", date_str).execute()
-    logging.debug("Données récupérées : %s", response.data)
-    return response.data
-
-# Fonction pour récupérer les données dans la table "IA" entre deux dates données
-def get_ia_data_between_dates(start_date_str, end_date_str):
-    response = supabase.table("IA").select("*").gte("Date", start_date_str).lte("Date", end_date_str).execute()
-    logging.debug("Données récupérées entre %s et %s : %s", start_date_str, end_date_str, response.data)
-    return response.data
+# Définir la taille maximale de l'historique
+MAX_HISTORY_LENGTH = 10
 
 # Définition des fonctions au format JSON pour le function calling
 function_definitions = [
@@ -99,55 +93,85 @@ function_definitions = [
     }
 ]
 
+# Fonction pour valider le format des dates
+def validate_date(date_str: str) -> bool:
+    try:
+        dt.strptime(date_str, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
+
+# Fonction pour récupérer les données dans la table "IA" pour une date donnée
+def get_ia_data_for_date(date_str: str) -> List[Dict]:
+    response = supabase.table("IA").select("*").eq("Date", date_str).execute()
+    logging.debug("Données récupérées pour la date %s : %s", date_str, response.data)
+    return response.data
+
+# Fonction pour récupérer les données dans la table "IA" entre deux dates données
+def get_ia_data_between_dates(start_date_str: str, end_date_str: str) -> List[Dict]:
+    response = supabase.table("IA").select("*").gte("Date", start_date_str).lte("Date", end_date_str).execute()
+    logging.debug("Données récupérées entre %s et %s : %s", start_date_str, end_date_str, response.data)
+    return response.data
+
+# Fonction pour vérifier si un utilisateur existe dans Supabase
+def user_exists(email: str) -> bool:
+    response = supabase.table("users").select("*").eq("email", email).execute()
+    return bool(response.data)
+
+# Fonction pour créer un nouvel utilisateur dans Supabase
+def create_user(email: str, name: str):
+    supabase.table("users").insert({"email": email, "name": name}).execute()
+    logging.info(f"Nouvel utilisateur créé : {email}")
+
 # Fonction de gestion de l'appel de fonction pour OpenAI
-def call_function_with_parameters(function_name, function_args_json):
+def call_function_with_parameters(function_name: str, function_args_json: str) -> str:
     function_args = json.loads(function_args_json)
+    
     if function_name == "get_ia_data_for_date":
         date_str = function_args.get("date")
-        if date_str:
+        if date_str and validate_date(date_str):
             logging.info(f"Date fournie par l'IA : {date_str}")
-            function_response = get_ia_data_for_date(date_str)
-            if not function_response:
+            data = get_ia_data_for_date(date_str)
+            if not data:
                 return "Aucune information trouvée pour la date spécifiée."
-            data_str = json.dumps(function_response, ensure_ascii=False, indent=2)
+            data_str = json.dumps(data, ensure_ascii=False, indent=2)
             return f"Voici les données pour la date {date_str} :\n{data_str}"
         else:
-            return "Date non spécifiée."
+            return "Format de date invalide ou date non spécifiée."
     
     elif function_name == "get_ia_data_between_dates":
         start_date_str = function_args.get("start_date")
         end_date_str = function_args.get("end_date")
-        if start_date_str and end_date_str:
+        if start_date_str and end_date_str and validate_date(start_date_str) and validate_date(end_date_str):
             logging.info(f"Plage de dates fournie par l'IA : {start_date_str} à {end_date_str}")
-            function_response = get_ia_data_between_dates(start_date_str, end_date_str)
-            if not function_response:
+            data = get_ia_data_between_dates(start_date_str, end_date_str)
+            if not data:
                 return "Aucune information trouvée pour la plage de dates spécifiée."
-            data_str = json.dumps(function_response, ensure_ascii=False, indent=2)
+            data_str = json.dumps(data, ensure_ascii=False, indent=2)
             return f"Voici les données entre le {start_date_str} et le {end_date_str} :\n{data_str}"
         else:
-            return "Dates de début et/ou de fin non spécifiées."
+            return "Format de date invalide ou dates de début et/ou de fin non spécifiées."
     
     return "Aucune fonction correspondante trouvée."
 
 # Fonction pour envoyer la requête à OpenAI avec streaming et function calling
-async def get_openai_response(conversation_history, msg):
-    system_message = f"{SYSTEM_PROMPT}\nNous sommes le {current_day}/{current_month}/{current_year}."
-
+async def get_openai_response(conversation_history: List[Dict], msg: cl.Message) -> str:
+    current_date = dt.now()
+    system_message = f"{SYSTEM_PROMPT}\nNous sommes le {current_date.day}/{current_date.month}/{current_date.year}."
     messages = [{"role": "system", "content": system_message}] + conversation_history
 
     assistant_response = ""
     function_call = None
-    function_name = None
     function_args = ""
 
     # Appel à OpenAI avec toutes les définitions de fonctions incluses
     completion = await openai.ChatCompletion.acreate(
-        model="gpt-4o-mini-2024-07-18",
+        model="gpt-4o-mini-2024-07-18",  # Assurez-vous d'utiliser le modèle correct
         messages=messages,
-        functions=function_definitions,  # Utilisation de la liste complète
+        functions=function_definitions,
         function_call="auto",
         stream=True,
-        max_tokens=1500,
+        max_tokens=3000,
         temperature=0.8
     )
 
@@ -185,10 +209,10 @@ async def get_openai_response(conversation_history, msg):
         assistant_response = ""
 
         completion = await openai.ChatCompletion.acreate(
-            model="gpt-4o-mini-2024-07-18",
+            model="gpt-4o-mini-2024-07-18",  # Assurez-vous d'utiliser le modèle correct
             messages=messages,
             stream=True,
-            max_tokens=1500,
+            max_tokens=3000,
             temperature=0.8
         )
 
@@ -200,31 +224,46 @@ async def get_openai_response(conversation_history, msg):
                 await msg.stream_token(token)
 
         conversation_history.append({"role": "assistant", "content": assistant_response})
-
         logging.info("Réponse finale envoyée à l'utilisateur : %s", assistant_response)
         return assistant_response
     else:
         conversation_history.append({"role": "assistant", "content": assistant_response})
-
         logging.info("Réponse finale envoyée à l'utilisateur : %s", assistant_response)
         return assistant_response
 
-# Définir la taille maximale de l'historique
-MAX_HISTORY_LENGTH = 10
+# Fonction de callback OAuth pour Google
+@cl.oauth_callback
+def oauth_callback(
+    provider_id: str,
+    token: str,
+    raw_user_data: Dict[str, str],
+    default_user: cl.User,
+) -> Optional[cl.User]:
+    if provider_id == "google":
+        email = raw_user_data.get("email")
+        name = raw_user_data.get("name")
+
+        if email and name:
+            if not user_exists(email):
+                create_user(email, name)
+            else:
+                logging.info(f"Utilisateur existant : {email}")
+            return default_user
+        else:
+            logging.warning("Données utilisateur incomplètes reçues.")
+            return None
+    return None
 
 # Gestion des messages dans Chainlit avec ajout du loader
 @cl.on_message
-async def main(message: cl.Message):
+async def handle_message(message: cl.Message):
     user_message = message.content
 
-    # Initialiser l'historique de conversation si nécessaire
-    if cl.user_session.get('conversation_history') is None:
-        cl.user_session.set('conversation_history', [])
-
-    conversation_history = cl.user_session.get('conversation_history')
-
+    # Initialiser ou récupérer l'historique de conversation
+    conversation_history = cl.user_session.get('conversation_history', [])
     conversation_history.append({"role": "user", "content": user_message})
 
+    # Limiter la taille de l'historique
     if len(conversation_history) > MAX_HISTORY_LENGTH:
         conversation_history = conversation_history[-MAX_HISTORY_LENGTH:]
 
@@ -247,30 +286,3 @@ async def main(message: cl.Message):
 
     # Mettre à jour l'historique de conversation dans la session utilisateur
     cl.user_session.set('conversation_history', conversation_history)
-
-# Fonction de callback OAuth pour Google
-@cl.oauth_callback
-def oauth_callback(
-    provider_id: str,
-    token: str,
-    raw_user_data: Dict[str, str],
-    default_user: cl.User,
-) -> Optional[cl.User]:
-    if provider_id == "google":
-        # Récupérer les informations de l'utilisateur
-        email = raw_user_data.get("email")
-        name = raw_user_data.get("name")
-
-        # Vérifier si l'utilisateur existe déjà dans Supabase
-        response = supabase.table("users").select("*").eq("email", email).execute()
-        user_data = response.data
-
-        if not user_data:
-            # Créer un nouvel utilisateur
-            supabase.table("users").insert({"email": email, "name": name}).execute()
-            logging.info(f"Nouvel utilisateur créé : {email}")
-        else:
-            logging.info(f"Utilisateur existant : {email}")
-
-        return default_user
-    return None
